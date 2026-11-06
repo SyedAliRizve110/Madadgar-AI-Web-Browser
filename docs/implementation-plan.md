@@ -248,7 +248,7 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.1: Interactive DOM Scanner & Unique Indexer
+### Task 3.1: Interactive DOM Scanner & Unique Indexer (Status: COMPLETED)
 - **Deliverables:**
   - Create `src/content/scanner.ts`:
     - Query target selectors: `button`, `a[href]`, `input`, `textarea`, `select`, `[role="button"]`, `[role="link"]`, `[tabindex="0"]`.
@@ -260,7 +260,7 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.2: Zero-Interference Numbered Badge & Highlighter Overlay
+### Task 3.2: Zero-Interference Numbered Badge & Highlighter Overlay (Status: COMPLETED)
 - **Deliverables:**
   - Create `src/content/overlay.ts`:
     - Inject a single root container `#madadgar-overlay-root` inside a closed Shadow DOM to avoid styling conflicts with host sites.

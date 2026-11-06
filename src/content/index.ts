@@ -8,13 +8,28 @@ import {
   extractUnifiedPageContent,
   extractYouTubeTranscript,
 } from './extractor';
-import type { ExtractReadabilityResponse } from '@/common/types';
+import { DOMScanner } from './scanner';
+import { BadgeOverlay } from './overlay';
+import type {
+  ExtractReadabilityResponse,
+  ScanDOMResponse,
+  OverlayHighlightMode,
+} from '@/common/types';
 
 /**
  * Handles incoming runtime messages for the content script.
  */
 export function handleContentScriptMessage(
-  message: { type?: string; action?: string; seconds?: number; videoId?: string },
+  message: {
+    type?: string;
+    action?: string;
+    seconds?: number;
+    videoId?: string;
+    renderBadges?: boolean;
+    targetId?: number;
+    mode?: OverlayHighlightMode;
+    scrollIntoView?: boolean;
+  },
   _sender: chrome.runtime.MessageSender,
   sendResponse: (response: any) => void
 ): boolean {
@@ -57,8 +72,76 @@ export function handleContentScriptMessage(
     return true;
   }
 
+  // 3. Interactive DOM Scanner (Task 3.1 & Task 3.2)
+  if (messageType === 'SCAN_INTERACTIVE_DOM') {
+    try {
+      const elements = DOMScanner.scan(document);
+      if (message.renderBadges !== false) {
+        BadgeOverlay.renderBadges(elements);
+      }
+      const response: ScanDOMResponse = {
+        success: true,
+        count: elements.length,
+        elements,
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        title: typeof document !== 'undefined' ? document.title : '',
+      };
+      sendResponse(response);
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.error('[Madadgar Content Script] DOM scan failed:', errorMsg);
+      sendResponse({
+        success: false,
+        count: 0,
+        elements: [],
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        title: typeof document !== 'undefined' ? document.title : '',
+        error: errorMsg,
+      } as ScanDOMResponse);
+    }
+    return true;
+  }
 
-  // 2. Explicit YouTube Transcript Extraction
+  // 4. Render Badges explicitly (Task 3.2)
+  if (messageType === 'RENDER_BADGES') {
+    const elements = DOMScanner.getLastScannedElements();
+    BadgeOverlay.renderBadges(elements);
+    sendResponse({ success: true, count: elements.length });
+    return true;
+  }
+
+  // 5. Clear Badges & Overlay (Task 3.2)
+  if (messageType === 'CLEAR_BADGES') {
+    BadgeOverlay.clearBadges();
+    DOMScanner.clear();
+    sendResponse({ success: true });
+    return true;
+  }
+
+  // 6. Highlight Target Element (Task 3.2 / 3.4)
+  if (messageType === 'HIGHLIGHT_ELEMENT') {
+    const targetId = message.targetId;
+    if (typeof targetId === 'number') {
+      const success = BadgeOverlay.highlightTarget(
+        targetId,
+        message.mode || 'proposed',
+        message.scrollIntoView ?? true
+      );
+      sendResponse({ success });
+    } else {
+      sendResponse({ success: false, error: 'targetId must be a number' });
+    }
+    return true;
+  }
+
+  // 7. Clear Element Highlights (Task 3.2)
+  if (messageType === 'CLEAR_HIGHLIGHTS') {
+    BadgeOverlay.clearHighlights();
+    sendResponse({ success: true });
+    return true;
+  }
+
+  // 8. Explicit YouTube Transcript Extraction
   if (messageType === 'EXTRACT_YOUTUBE_TRANSCRIPT') {
     extractYouTubeTranscript(document)
       .then((ytResult) => {
@@ -79,7 +162,7 @@ export function handleContentScriptMessage(
     return true; // Keep message channel open for async sendResponse
   }
 
-  // 3. YouTube Video Seeking on Clickable Timestamps
+  // 9. YouTube Video Seeking on Clickable Timestamps
   if (messageType === 'SEEK_YOUTUBE_VIDEO') {
     const targetSeconds = typeof message.seconds === 'number' ? message.seconds : 0;
     const videoEl = document.querySelector('video') as HTMLVideoElement | null;
@@ -98,6 +181,8 @@ export function handleContentScriptMessage(
 
   return false;
 }
+
+export { DOMScanner, BadgeOverlay };
 
 /**
  * Initialize runtime listener if chrome.runtime is available.

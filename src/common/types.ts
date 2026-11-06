@@ -258,6 +258,73 @@ export interface ExtractReadabilityResponse extends ExtractedContentResult {
   error?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3: Human-in-the-Loop Browser Actions ("The Hands") Types
+// ---------------------------------------------------------------------------
 
+export interface ScannedElementRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  bottom: number;
+  right: number;
+}
 
+export interface ScannedElement {
+  id: number;
+  tag: string;
+  type?: string;
+  name?: string;
+  label?: string;
+  placeholder?: string;
+  currentValue?: string;
+  text?: string;
+  role?: string;
+  href?: string;
+  disabled?: boolean;
+  isPassword?: boolean;
+  isConsequential?: boolean;
+  rect: ScannedElementRect;
+}
+
+export type OverlayHighlightMode = 'proposed' | 'dry-run' | 'pulse';
+
+export interface ScanDOMResponse {
+  success: boolean;
+  count: number;
+  elements: ScannedElement[];
+  url: string;
+  title: string;
+  error?: string;
+}
+
+export interface ScanDOMMessage {
+  type: 'SCAN_INTERACTIVE_DOM';
+  renderBadges?: boolean;
+}
+
+export interface ClearBadgesMessage {
+  type: 'CLEAR_BADGES';
+}
+
+export interface HighlightElementMessage {
+  type: 'HIGHLIGHT_ELEMENT';
+  targetId: number;
+  mode?: OverlayHighlightMode;
+}
+
+export interface ClearHighlightsMessage {
+  type: 'CLEAR_HIGHLIGHTS';
+}
+
+export type AgentActionType = 'click' | 'type' | 'select' | 'scroll' | 'done' | 'fail';
+
+export interface AgentActionProposal {
+  action: AgentActionType;
+  target_id?: number;
+  value?: string;
+  reason: string;
+  is_consequential?: boolean;
+}
 
