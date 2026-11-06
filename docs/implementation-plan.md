@@ -323,18 +323,22 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.7: Step Approval UI Card & Agent Pilot
+### Task 3.7: Step Approval UI Card & Agent Pilot (Status: COMPLETED)
 - **Deliverables:**
   - Build `ActionCard.tsx` in the Side Panel:
-    - Display current Step number (e.g., *Step 3 of 15*).
-    - Show target element badge number and human-readable action description.
+    - Display current Step number (e.g., *Step 3 of 15*) with visual progress bar.
+    - Show target element badge number (`#4`) and human-readable action type badge (`Click`, `Type Text`, `Select Option`, `Scroll Page`).
     - Show AI's reasoning: *"Typing college name from your profile into field #4."*
+    - Show input value preview and consequential action warning banner when `is_consequential: true`.
     - Three primary buttons:
       - **Approve (Green)**: Executes the proposed action.
       - **Skip (Yellow)**: Advances to next step without performing this action.
       - **Stop (Red)**: Immediately cancels the errand.
     - **Dry-Run Mode Toggle**: When enabled, outlines the element on the page without performing the real click/type.
-- **Target Files:** `src/sidepanel/components/ActionCard.tsx`, `src/sidepanel/components/AgentPilot.tsx`.
+  - Build `AgentPilot.tsx`:
+    - Full Pilot hub embedded into the Side Panel navigation.
+    - Handles errand creation, live step execution, past steps history timeline, safety guardrail alerts, and dormancy rehydration.
+- **Target Files:** `src/sidepanel/components/ActionCard.tsx`, `src/sidepanel/components/AgentPilot.tsx`, `src/sidepanel/App.tsx`.
 
 ---
 

@@ -19,6 +19,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ScreenshotModal } from './components/ScreenshotModal';
 import { SummaryCard } from './components/SummaryCard';
 import { ChatView } from './components/ChatView';
+import { AgentPilot } from './components/AgentPilot';
 import { RateLimitBanner } from './components/RateLimitBanner';
 import { MadadgarLogo } from './components/MadadgarLogo';
 import { useTabContext } from './hooks/useTabContext';
@@ -235,7 +236,12 @@ export const App: React.FC = () => {
 
   const handleKillSwitch = () => {
     setKillSwitchTriggered(true);
-    // Future integration: clear badges, abort active fetch, reset state
+    if (typeof chrome !== 'undefined' && chrome.runtime) {
+      chrome.runtime.sendMessage(
+        { type: 'STOP_AGENT_TASK', reason: 'Emergency kill switch triggered by user.' },
+        () => {}
+      );
+    }
     setTimeout(() => {
       setKillSwitchTriggered(false);
     }, 2500);
@@ -506,16 +512,29 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'agent' && (
-          <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-500 space-y-3">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-              <Bot className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-medium text-slate-800 text-sm">Agent Pilot (HITL)</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-xs">
-                Interactive errands with element highlighting and user sign-off at every single step.
-              </p>
-            </div>
+          <div className="h-full flex-1 min-h-0 flex flex-col">
+            {!hasApiKey ? (
+              <div className="p-4 m-4 bg-indigo-50/50 rounded-xl border border-indigo-100 text-xs text-indigo-900 space-y-2">
+                <p className="font-medium">Get Started:</p>
+                <p className="text-slate-600">
+                  Configure your Google Gemini API key to begin using the Agent Pilot.
+                </p>
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="mt-1 px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-medium text-xs hover:bg-indigo-700 transition-colors shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  <span>Configure API Key</span>
+                </button>
+              </div>
+            ) : (
+              <AgentPilot
+                context={activePageContext}
+                hasTabChanged={hasTabChanged}
+                onSyncContext={() => syncWithActiveTab(true)}
+                onConfigureApiKey={() => setIsSettingsOpen(true)}
+              />
+            )}
           </div>
         )}
 
