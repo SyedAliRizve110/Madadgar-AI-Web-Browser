@@ -13,8 +13,15 @@ import {
   Play,
   RotateCcw,
   Camera,
+  EyeOff,
 } from 'lucide-react';
-import type { PageContext, ChatMessage, SupportedLanguage, ContextMenuActionPayload } from '@/common/types';
+import type {
+  PageContext,
+  ChatMessage,
+  SupportedLanguage,
+  ContextMenuActionPayload,
+  ScanDOMResponse,
+} from '@/common/types';
 import { AIGateway, RateLimitCooldownError } from '@/ai/ai_gateway';
 import { parseTimestampToSeconds } from '@/content/extractor';
 
@@ -50,10 +57,29 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isStreaming, setIsStreaming] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [hasActiveBadges, setHasActiveBadges] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Helper to detect natural language element location requests (Task 3.4)
+  const isLocatorQuery = (text: string): boolean => {
+    const t = text.trim().toLowerCase();
+    return (
+      /^(where(\s+is|\s+are|\s+can\s+i|\s+do\s+i)?\b|find\b|locate\b|show\s+me\b|point\s+to\b|kahan\s+hai\b|kidhar\s+hai\b|dhoondo\b)/i.test(t) ||
+      /\b(where\s+do\s+i|where\s+is|where\s+are|where\s+can\s+i|find\s+the|locate\s+the|show\s+me\s+the)\b/i.test(t)
+    );
+  };
+
+  const handleClearBadges = () => {
+    if (context?.tabId && context.tabId > 0 && typeof chrome !== 'undefined' && chrome?.tabs) {
+      chrome.tabs.sendMessage(context.tabId, { type: 'CLEAR_BADGES' }, () => {
+        // Ignore response or error if tab reloaded
+      });
+    }
+    setHasActiveBadges(false);
+  };
 
   // Auto-scroll to bottom of conversation
   const scrollToBottom = () => {
@@ -205,6 +231,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
     setMessages([]);
     setErrorMessage(null);
+    handleClearBadges();
   };
 
   const handleStopStreaming = () => {
@@ -311,6 +338,89 @@ export const ChatView: React.FC<ChatViewProps> = ({
     abortControllerRef.current = abortController;
 
     try {
+      // Task 3.4: "Find It For Me" Natural Language Element Locator
+      if (
+        isLocatorQuery(promptToSend) &&
+        activeCtx.tabId &&
+        activeCtx.tabId > 0 &&
+        typeof chrome !== 'undefined' &&
+        chrome.tabs
+      ) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMessageId
+              ? { ...m, content: '🔍 Scanning interactive elements on active page...' }
+              : m
+          )
+        );
+
+        const scanRes = await new Promise<ScanDOMResponse | null>((resolve) => {
+          chrome.tabs.sendMessage(
+            activeCtx.tabId,
+            { type: 'SCAN_INTERACTIVE_DOM', renderBadges: true },
+            (response) => {
+              if (chrome.runtime?.lastError || !response?.success) {
+                resolve(null);
+              } else {
+                resolve(response);
+              }
+            }
+          );
+        });
+
+        if (scanRes && scanRes.elements && scanRes.elements.length > 0) {
+          setHasActiveBadges(true);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMessageId
+                ? {
+                    ...m,
+                    content: `🔍 Found ${scanRes.elements.length} interactive elements. Locating match for: "${promptToSend}"...`,
+                  }
+                : m
+            )
+          );
+
+          const locatorResult = await AIGateway.locateElement(
+            promptToSend,
+            scanRes.elements,
+            { language, signal: abortController.signal }
+          );
+
+          if (locatorResult.targetId !== null) {
+            // Pulse & scroll into view on the webpage!
+            chrome.tabs.sendMessage(activeCtx.tabId, {
+              type: 'LOCATE_ELEMENT',
+              targetId: locatorResult.targetId,
+            });
+
+            const targetEl = scanRes.elements.find(
+              (el) => el.id === locatorResult.targetId
+            );
+            const tagDesc = targetEl
+              ? `\`[${targetEl.tag}${targetEl.type ? `:${targetEl.type}` : ''}]\` "${targetEl.label || targetEl.placeholder || targetEl.text || ''}"`
+              : '';
+
+            const reply = [
+              `🎯 **Found it! Element #${locatorResult.targetId}** ${tagDesc}`,
+              '',
+              locatorResult.reason,
+              '',
+              `✨ *I have scrolled element #${locatorResult.targetId} into view on your screen and highlighted it with a glowing pulse box.*`,
+            ].join('\n');
+
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: reply, isStreaming: false }
+                  : m
+              )
+            );
+            return;
+          }
+        }
+      }
+
       let accumulated = '';
       await AIGateway.groundedChatStream({
         query: promptToSend,
@@ -384,10 +494,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const promptSuggestions = [
+    'Where is the main action or submit button on this page?',
     'What is the core premise of this page?',
     'Summarize the key facts and data points.',
     'What actionable steps or conclusions are recommended?',
-    'Does this page mention any risks or limitations?',
   ];
 
   return (
@@ -432,6 +542,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 title="Toggle between English and Hinglish"
               >
                 {language === 'en' ? 'EN' : 'Hinglish'}
+              </button>
+            )}
+
+            {hasActiveBadges && (
+              <button
+                type="button"
+                onClick={handleClearBadges}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                title="Clear overlay badges from the page"
+              >
+                <EyeOff className="w-3 h-3 text-amber-600" />
+                <span>Clear Badges</span>
               </button>
             )}
 

@@ -271,7 +271,7 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.3: Token-Optimized Action Map Serializer
+### Task 3.3: Token-Optimized Action Map Serializer (Status: COMPLETED)
 - **Deliverables:**
   - Build `src/ai/token_optimizer.ts` to convert the scanned DOM into a compact representation for LLM prompts:
     ```
@@ -280,17 +280,19 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
     #3 [button] "Submit Application"
     ```
   - Strip redundant tags, inline styles, and unlabelled divs to conserve prompt tokens.
+  - Implement progressive 4-pass token budget compression (`compressActionMapToBudget`) ensuring prompts fit strict model context windows.
 - **Target Files:** `src/ai/token_optimizer.ts`.
 
 ---
 
-### Task 3.4: "Find It For Me" Natural Language Element Locator
+### Task 3.4: "Find It For Me" Natural Language Element Locator (Status: COMPLETED)
 - **Deliverables:**
   - Allow users to ask queries like: *"Where do I upload my resume?"* or *"Where is the pricing table?"*.
-  - Prompt Gemini Flash-Lite with the Action Map and structured output schema:
-    `{ "target_id": 4, "reason": "The file input with label 'Upload Resume'" }`
-  - Content script scrolls target element into view (`scrollIntoView({ behavior: 'smooth', block: 'center' })`) and pulses the badge without clicking it.
-- **Target Files:** `src/ai/prompts/agent_planner.ts`, `src/content/overlay.ts`.
+  - Prompt Gemini Flash / Groq resilience engine with the Action Map and structured output schema:
+    `{ "target_id": 4, "reason": "The file input with label 'Upload Resume'", "confidence": "high" }`
+  - Content script scrolls target element into view (`scrollIntoView({ behavior: 'smooth', block: 'center' })`) and pulses the badge and glowing outline box without clicking it.
+  - Seamlessly integrates into `ChatView.tsx` with natural language fallback to grounded page QA.
+- **Target Files:** `src/ai/prompts/element_locator.ts`, `src/ai/ai_gateway.ts`, `src/content/overlay.ts`, `src/sidepanel/components/ChatView.tsx`.
 
 ---
 

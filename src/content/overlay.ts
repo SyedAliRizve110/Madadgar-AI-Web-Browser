@@ -111,6 +111,26 @@ const OVERLAY_STYLES = `
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3), 0 0 12px rgba(245, 158, 11, 0.4) !important;
   transition: all 0.15s ease-out !important;
 }
+
+/* "Find It For Me" Pulse Locator Highlight Box (Task 3.4) */
+.madadgar-highlight-pulse {
+  position: fixed !important;
+  border: 2.5px solid #6366f1 !important; /* Indigo 500 */
+  background: rgba(99, 102, 241, 0.2) !important;
+  border-radius: 6px !important;
+  pointer-events: none !important;
+  animation: madadgar-locator-pulse 1.2s infinite ease-in-out !important;
+}
+
+@keyframes madadgar-locator-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4), 0 0 10px rgba(99, 102, 241, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.7), 0 0 24px rgba(99, 102, 241, 0.8);
+    background: rgba(99, 102, 241, 0.3) !important;
+  }
+}
 `;
 
 export class BadgeOverlay {
@@ -321,7 +341,11 @@ export class BadgeOverlay {
     // 1. Create highlight box
     const highlightBox = document.createElement('div');
     highlightBox.className =
-      mode === 'dry-run' ? 'madadgar-highlight-dry-run' : 'madadgar-highlight-proposed';
+      mode === 'dry-run'
+        ? 'madadgar-highlight-dry-run'
+        : mode === 'pulse'
+        ? 'madadgar-highlight-pulse'
+        : 'madadgar-highlight-proposed';
     highlightBox.dataset.targetId = String(targetId);
 
     highlightBox.style.top = `${Math.round(rect.top)}px`;

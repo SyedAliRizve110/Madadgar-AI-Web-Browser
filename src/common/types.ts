@@ -318,6 +318,24 @@ export interface ClearHighlightsMessage {
   type: 'CLEAR_HIGHLIGHTS';
 }
 
+export interface ElementLocatorResult {
+  targetId: number | null;
+  reason: string;
+  confidence?: 'high' | 'medium' | 'low';
+}
+
+export interface LocateElementMessage {
+  type: 'LOCATE_ELEMENT';
+  query: string;
+  elements?: ScannedElement[];
+}
+
+export interface LocateElementResponse {
+  success: boolean;
+  result?: ElementLocatorResult;
+  error?: string;
+}
+
 export type AgentActionType = 'click' | 'type' | 'select' | 'scroll' | 'done' | 'fail';
 
 export interface AgentActionProposal {

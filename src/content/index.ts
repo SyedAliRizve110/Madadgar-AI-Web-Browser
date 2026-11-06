@@ -134,14 +134,26 @@ export function handleContentScriptMessage(
     return true;
   }
 
-  // 7. Clear Element Highlights (Task 3.2)
+  // 7. Locate & Pulse Element for "Find It For Me" (Task 3.4)
+  if (messageType === 'LOCATE_ELEMENT') {
+    const targetId = message.targetId;
+    if (typeof targetId === 'number') {
+      const success = BadgeOverlay.highlightTarget(targetId, 'pulse', true);
+      sendResponse({ success, targetId });
+    } else {
+      sendResponse({ success: false, error: 'targetId must be a number' });
+    }
+    return true;
+  }
+
+  // 8. Clear Element Highlights (Task 3.2)
   if (messageType === 'CLEAR_HIGHLIGHTS') {
     BadgeOverlay.clearHighlights();
     sendResponse({ success: true });
     return true;
   }
 
-  // 8. Explicit YouTube Transcript Extraction
+  // 9. Explicit YouTube Transcript Extraction
   if (messageType === 'EXTRACT_YOUTUBE_TRANSCRIPT') {
     extractYouTubeTranscript(document)
       .then((ytResult) => {

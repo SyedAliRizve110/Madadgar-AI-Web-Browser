@@ -7,7 +7,7 @@
  */
 
 import { getSettings } from '@/common/storage_adapter';
-import type { SupportedLanguage, PageContext, ChatMessage } from '@/common/types';
+import type { SupportedLanguage, PageContext, ChatMessage, ScannedElement, ElementLocatorResult } from '@/common/types';
 import { GEMINI_VISION_MODEL, DEFAULT_GROQ_MODEL } from '@/common/constants';
 import {
   generateContent,
@@ -33,6 +33,11 @@ import {
   buildGroundedSystemInstruction,
   buildGroundedChatContents,
 } from './prompts/grounded_qa';
+import { serializeActionMap } from './token_optimizer';
+import {
+  buildElementLocatorPrompt,
+  parseElementLocatorResponse,
+} from './prompts/element_locator';
 
 export class RateLimitCooldownError extends Error {
   public cooldownSeconds: number;
@@ -770,6 +775,59 @@ export class AIGateway {
             })
         : undefined,
     });
+  }
+
+  /**
+   * "Find It For Me" Natural Language Element Locator (Task 3.4)
+   * Analyzes active page interactive elements and identifies target element matching user query.
+   */
+  public static async locateElement(
+    query: string,
+    elements: ScannedElement[],
+    options?: BaseAIOptions
+  ): Promise<ElementLocatorResult> {
+    if (!elements || elements.length === 0) {
+      return {
+        targetId: null,
+        reason: 'No interactive elements detected on this page.',
+        confidence: 'low',
+      };
+    }
+
+    const apiKey = await this.resolveApiKey(options?.apiKey);
+    const groqKey = await this.resolveGroqApiKey();
+    const language = await this.resolveLanguage(options?.language);
+
+    const actionMap = serializeActionMap(elements, { includeValues: true, maxElements: 120 });
+    const { systemInstruction, userPrompt } = buildElementLocatorPrompt(query, actionMap, language);
+
+    const rawResponse = await this.executeWithResilience<string>({
+      taskName: 'locateElement',
+      signal: options?.signal,
+      geminiAction: () =>
+        generateContent({
+          apiKey,
+          prompt: userPrompt,
+          systemInstruction,
+          config: options?.config,
+          signal: options?.signal,
+        }),
+      groqAction: groqKey
+        ? () =>
+            generateGroqContent({
+              apiKey: groqKey,
+              messages: formatGeminiPromptToGroqMessages(userPrompt, systemInstruction),
+              signal: options?.signal,
+            })
+        : undefined,
+    });
+
+    const rawString =
+      typeof rawResponse === 'string'
+        ? rawResponse
+        : (rawResponse as any)?.text || JSON.stringify(rawResponse);
+
+    return parseElementLocatorResponse(rawString);
   }
 }
 
