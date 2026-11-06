@@ -104,6 +104,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === 'EMERGENCY_KILL_SWITCH') {
+    AgentOrchestrator.emergencyKillSwitch(message.reason)
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (message?.type === 'CLEAR_AGENT_SESSION' || message?.type === 'RESET_AGENT_SESSION') {
     AgentOrchestrator.clearSession()
       .then(() => sendResponse({ success: true }))

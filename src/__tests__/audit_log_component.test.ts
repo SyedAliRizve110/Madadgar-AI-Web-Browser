@@ -79,3 +79,4 @@ describe('AuditLog Component UI (Task 3.9)', () => {
     expect(html).toBeDefined();
   });
 });
+

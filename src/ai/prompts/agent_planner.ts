@@ -57,7 +57,8 @@ Rules:
 3. Agar form submit ho raha ho, payment ho rahi ho, ya delete action ho, toh "is_consequential": true set karein.
 4. Agar goal achieve ho chuka hai, toh "action": "done" propose karein. Step 1 par ya jab tak goal ke interactions perform nahi hue hain, "done" propose na karein; pehla click ya type step propose karein.
 5. Loop Prevention: Agar pichle step mein wohi button click kiya gaya tha aur page nahi badla, toh dobara wahi action propose na karein. Agar form submit nahi ho raha ya login fail ho raha hai, "fail" propose karein explanation ke saath.
-6. Markdown code fences ke bina sirf raw JSON return karein.`
+6. Form-Filling Engine: Jab user profile se form fill karna ho, page ke input fields ko profile ke fields (Name, Email, Phone, College, Degree, Major, Year, Skills, LinkedIn, GitHub) se map karein aur ek-ek karke fill karein taaki user har step approve kar sake.
+7. Markdown code fences ke bina sirf raw JSON return karein.`
     : `You are Madadgar's Human-in-the-Loop Autonomous Browser Agent.
 Your goal is to accomplish the user's task step-by-step by analyzing the numbered Action Map of the current webpage and proposing the single best next action.
 
@@ -83,7 +84,14 @@ Core Rules:
 8. NEVER guess passwords, security codes, or credit card numbers. If encountered, set action to "fail" or ask the user.
 9. Loop Prevention: DO NOT propose the exact same action and target_id repeatedly if it was already executed in recent steps and produced no state change or navigation. If a button was already clicked and the page is unchanged, do not click it again; analyze if an input field is missing, or conclude "fail" with an explanation.
 10. Accurate Task Completion: DO NOT conclude "done" if the goal was to log in, submit, or search, but the page is still stuck on the initial unsubmitted form, login screen, or empty result page. Conclude "fail" with a clear reason instead of falsely claiming completion.
-11. Return ONLY the JSON object. Do not enclose in markdown backticks or add introductory prose.`;
+11. Profile Form-Filling Engine (Task 4.2): When the goal is to fill out a form or apply (e.g. "fill form", "apply from profile"):
+    - Carefully inspect each unfilled input, textarea, and select element in the Action Map.
+    - Correlate each field with the User Profile Memory (Name -> fullName, Email -> email, Phone -> phone, College/University -> institution, Degree -> degree, Major -> major, Graduation Year -> graduationYear, Skills -> skills, LinkedIn -> linkedInUrl, GitHub -> githubUrl, Portfolio -> portfolioUrl).
+    - Propose ONE field fill per step so each proposal is displayed individually in the HITL approval card for user sign-off.
+    - For text inputs, use "action": "type", "target_id": <id>, "value": "<mapped_profile_value>".
+    - In "reason", explicitly state what profile data is being populated into which field (e.g., "Typing college name from user profile into institution field", "Typing email address from profile into field #2").
+    - Once all available form fields are filled, propose clicking Next or Submit (marking "is_consequential": true for final submissions).
+12. Return ONLY the JSON object. Do not enclose in markdown backticks or add introductory prose.`;
 
   // Format past steps history
   let historyBlock = '(No prior steps executed yet. This is Step 1.)';
@@ -110,10 +118,14 @@ Core Rules:
     if (personal.phone) profileDetails.push(`- Phone: ${personal.phone}`);
     if (personal.location) profileDetails.push(`- Location: ${personal.location}`);
     if (academic.institution) profileDetails.push(`- University/School: ${academic.institution}`);
-    if (academic.degree) profileDetails.push(`- Degree: ${academic.degree} (${academic.major || ''})`);
+    if (academic.degree) profileDetails.push(`- Degree: ${academic.degree}`);
+    if (academic.major) profileDetails.push(`- Major: ${academic.major}`);
+    if (academic.graduationYear) profileDetails.push(`- Graduation Year: ${academic.graduationYear}`);
     if (professional.skills?.length) profileDetails.push(`- Skills: ${professional.skills.join(', ')}`);
     if (professional.linkedInUrl) profileDetails.push(`- LinkedIn: ${professional.linkedInUrl}`);
     if (professional.githubUrl) profileDetails.push(`- GitHub: ${professional.githubUrl}`);
+    if (professional.portfolioUrl) profileDetails.push(`- Portfolio: ${professional.portfolioUrl}`);
+    if (profileMemory.preferences?.tone) profileDetails.push(`- Preferred Writing Tone: ${profileMemory.preferences.tone}`);
 
     if (profileDetails.length > 0) {
       profileBlock = `\n\nUser Profile Memory (Available to fill relevant forms):\n${profileDetails.join('\n')}`;

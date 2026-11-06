@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Check,
   SkipForward,
@@ -11,6 +11,7 @@ import {
   ListFilter,
   ArrowUpDown,
   CheckCircle,
+  ShieldAlert,
 } from 'lucide-react';
 import type { AgentActionProposal, AgentActionType } from '@/common/types';
 
@@ -39,6 +40,24 @@ export const ActionCard: React.FC<ActionCardProps> = ({
 }) => {
   const { action, target_id, value, reason, is_consequential } = proposal;
   const progressPercent = Math.min(100, Math.round((step / maxSteps) * 100));
+
+  // Elevated Double-Confirmation State for Consequential Actions (Task 4.4.3)
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmCheckbox, setConfirmCheckbox] = useState(false);
+
+  const handleApproveClick = () => {
+    if (is_consequential) {
+      setShowConfirmModal(true);
+      return;
+    }
+    onApprove();
+  };
+
+  const handleElevatedConfirm = () => {
+    setShowConfirmModal(false);
+    setConfirmCheckbox(false);
+    onApprove();
+  };
 
   const renderActionBadge = (act: AgentActionType) => {
     switch (act) {
@@ -197,15 +216,28 @@ export const ActionCard: React.FC<ActionCardProps> = ({
         {/* Approve Button */}
         <button
           type="button"
-          onClick={onApprove}
+          onClick={handleApproveClick}
           disabled={isExecuting}
-          className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          title="Approve and execute this single action"
+          className={`flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer disabled:opacity-50 ${
+            is_consequential
+              ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
+              : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'
+          }`}
+          title={
+            is_consequential
+              ? 'Elevated confirmation required for consequential step'
+              : 'Approve and execute this single action'
+          }
         >
           {isExecuting ? (
             <>
               <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               <span>Executing...</span>
+            </>
+          ) : is_consequential ? (
+            <>
+              <ShieldAlert className="w-4 h-4 stroke-[2.5]" />
+              <span>Review & Approve</span>
             </>
           ) : (
             <>
@@ -239,6 +271,81 @@ export const ActionCard: React.FC<ActionCardProps> = ({
           <span>Stop</span>
         </button>
       </div>
+
+      {/* 4. Consequential Action Elevated Double-Confirmation Dialog (Task 4.4.3) */}
+      {showConfirmModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="consequential-dialog-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+        >
+          <div className="bg-white w-full max-w-sm rounded-2xl p-5 shadow-2xl border border-amber-200 space-y-4">
+            <div className="flex items-center gap-2.5 text-amber-700">
+              <div className="p-2 rounded-xl bg-amber-100/80 border border-amber-200 shrink-0">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 id="consequential-dialog-title" className="text-sm font-bold text-slate-900 leading-tight">
+                  Elevated Confirmation Required
+                </h3>
+                <p className="text-[11px] text-amber-800 font-medium">
+                  Consequential Action Interceptor Gate
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-xs text-amber-900 space-y-2">
+              <p className="leading-relaxed">
+                This action was detected as a <strong>consequential or irreversible operation</strong> (e.g., Submit, Pay, Transfer, Delete, Send, or Confirm Order).
+              </p>
+              <div className="text-[11px] text-slate-700 bg-white p-2 rounded-lg border border-amber-200/50 break-words">
+                <strong>Action:</strong> {action.toUpperCase()}
+                {target_id !== null && target_id !== undefined ? ` on #${target_id}` : ''}
+                {value ? ` with value "${value}"` : ''}
+              </div>
+            </div>
+
+            <label
+              htmlFor="elevated-confirm-checkbox"
+              className="flex items-start gap-2.5 text-xs text-slate-700 cursor-pointer select-none p-2 rounded-lg bg-slate-50 border border-slate-200"
+            >
+              <input
+                id="elevated-confirm-checkbox"
+                type="checkbox"
+                checked={confirmCheckbox}
+                onChange={(e) => setConfirmCheckbox(e.target.checked)}
+                className="w-4 h-4 mt-0.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer shrink-0"
+              />
+              <span className="text-[11px] font-medium leading-snug">
+                I verify that I have reviewed the active page and explicitly authorize this consequential action.
+              </span>
+            </label>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setConfirmCheckbox(false);
+                }}
+                className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!confirmCheckbox || isExecuting}
+                onClick={handleElevatedConfirm}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <Check className="w-4 h-4 stroke-[2.5]" />
+                <span>Confirm & Execute</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

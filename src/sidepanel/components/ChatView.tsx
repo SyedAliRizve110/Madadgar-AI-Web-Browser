@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Camera,
   EyeOff,
+  Download,
 } from 'lucide-react';
 import type {
   PageContext,
@@ -58,10 +59,29 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [hasActiveBadges, setHasActiveBadges] = useState(false);
+  const [isLlmMode, setIsLlmMode] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Rehydrate LLM switch state from storage
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.get(['chat_llm_mode'], (res) => {
+        if (res && res.chat_llm_mode !== undefined) {
+          setIsLlmMode(Boolean(res.chat_llm_mode));
+        }
+      });
+    }
+  }, []);
+
+  const handleToggleLlmMode = (enabled: boolean) => {
+    setIsLlmMode(enabled);
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({ chat_llm_mode: enabled });
+    }
+  };
 
   // Helper to detect natural language element location requests (Task 3.4)
   const isLocatorQuery = (text: string): boolean => {
@@ -242,6 +262,47 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
+  const handleDownloadChat = () => {
+    if (messages.length === 0) return;
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const pageTitle = context?.title || 'Webpage';
+    const pageUrl = context?.url || '';
+
+    const lines: string[] = [
+      '==================================================',
+      'Madadgar AI Browser Chat Transcript',
+      `Date: ${new Date().toLocaleString()}`,
+      pageTitle ? `Page: ${pageTitle}` : '',
+      pageUrl ? `URL: ${pageUrl}` : '',
+      `Mode: ${isLlmMode ? 'LLM Mode (General AI + Page Context)' : 'Grounded Page QA'}`,
+      '==================================================\n',
+    ].filter(Boolean);
+
+    for (const msg of messages) {
+      const roleLabel = msg.role === 'user' ? 'User' : 'Madadgar AI';
+      const timeStr = new Date(msg.timestamp).toLocaleTimeString();
+      lines.push(`[${timeStr}] ${roleLabel}:`);
+      lines.push(msg.content.trim());
+      lines.push('\n--------------------------------------------------\n');
+    }
+
+    const textContent = lines.join('\n');
+    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedTitle = (pageTitle || 'chat')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .slice(0, 30);
+    link.download = `madadgar-chat-${sanitizedTitle}-${timestamp}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Automatically process pending context menu action (Task 2.3)
   useEffect(() => {
     if (pendingAction && pendingAction.prompt) {
@@ -302,9 +363,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }
       : null;
 
-    if (!activeCtx || (!activeCtx.textContent && !activeCtx.selection)) {
+    if (!isLlmMode && (!activeCtx || (!activeCtx.textContent && !activeCtx.selection))) {
       setErrorMessage(
-        'No page context is loaded. Please open an article or YouTube video tab to chat with page content.'
+        'No page context is loaded. Switch on "LLM" to ask any question to AI chat, or open an article tab to chat with page content.'
       );
       return;
     }
@@ -317,8 +378,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       role: 'user',
       content: promptToSend,
       timestamp: Date.now(),
-      contextTitle: activeCtx.title,
-      contextUrl: activeCtx.url,
+      contextTitle: activeCtx?.title,
+      contextUrl: activeCtx?.url,
     };
 
     const assistantMessageId = `assistant-${Date.now()}`;
@@ -341,11 +402,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
       // Task 3.4: "Find It For Me" Natural Language Element Locator
       if (
         isLocatorQuery(promptToSend) &&
-        activeCtx.tabId &&
+        activeCtx?.tabId &&
         activeCtx.tabId > 0 &&
         typeof chrome !== 'undefined' &&
         chrome.tabs
       ) {
+        const targetTabId = activeCtx.tabId;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMessageId
@@ -356,7 +418,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
         const scanRes = await new Promise<ScanDOMResponse | null>((resolve) => {
           chrome.tabs.sendMessage(
-            activeCtx.tabId,
+            targetTabId,
             { type: 'SCAN_INTERACTIVE_DOM', renderBadges: true },
             (response) => {
               if (chrome.runtime?.lastError || !response?.success) {
@@ -389,7 +451,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           if (locatorResult.targetId !== null) {
             // Pulse & scroll into view on the webpage!
-            chrome.tabs.sendMessage(activeCtx.tabId, {
+            chrome.tabs.sendMessage(targetTabId, {
               type: 'LOCATE_ELEMENT',
               targetId: locatorResult.targetId,
             });
@@ -427,6 +489,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         context: activeCtx,
         history: updatedHistory,
         language,
+        mode: isLlmMode ? 'llm' : 'grounded',
         signal: abortController.signal,
         onChunk: (_, total) => {
           accumulated = total;
@@ -493,12 +556,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  const promptSuggestions = [
-    'Where is the main action or submit button on this page?',
-    'What is the core premise of this page?',
-    'Summarize the key facts and data points.',
-    'What actionable steps or conclusions are recommended?',
-  ];
+  const promptSuggestions = isLlmMode
+    ? [
+        'Explain this concept in depth with real-world applications.',
+        'What are key counterarguments or alternative perspectives?',
+        'Write a code sample or practical tutorial based on this.',
+        'What are the core insights and takeaways?',
+      ]
+    : [
+        'Where is the main action or submit button on this page?',
+        'What is the core premise of this page?',
+        'Summarize the key facts and data points.',
+        'What actionable steps or conclusions are recommended?',
+      ];
 
   return (
     <div className="flex flex-col h-full bg-slate-50 relative">
@@ -515,9 +585,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  Grounded QA
-                </span>
+                {isLlmMode ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-purple-600" />
+                    <span>LLM Connected</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    Grounded QA
+                  </span>
+                )}
                 {language && (
                   <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
                     {language === 'hinglish' ? 'Hinglish' : 'English'}
@@ -653,9 +730,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <MessageSquare className="w-6 h-6 stroke-[1.8]" />
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-slate-800">Ask Anything About This Page</h4>
+              <h4 className="font-semibold text-sm text-slate-800">
+                {isLlmMode ? 'Ask Anything to LLM' : 'Ask Anything About This Page'}
+              </h4>
               <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
-                Answers are grounded strictly in the active page's text. If something is missing from the page, Madadgar will tell you.
+                {isLlmMode
+                  ? 'Connected directly to LLM. Can answer questions about the active page as well as general knowledge, explanations, or topics beyond the page.'
+                  : "Answers are grounded strictly in the active page's text. If something is missing from the page, Madadgar will tell you."}
               </p>
             </div>
 
@@ -697,6 +778,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     <div className="flex items-center gap-1.5 text-indigo-600 font-semibold text-[11px]">
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Madadgar</span>
+                      {isLlmMode && (
+                        <span className="text-[9px] font-bold text-purple-700 bg-purple-100 px-1.5 py-0.2 rounded-md">
+                          LLM
+                        </span>
+                      )}
                     </div>
                     {message.content && (
                       <button
@@ -754,6 +840,47 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
       {/* 3. Bottom Chat Input Bar */}
       <div className="p-3 bg-white border-t border-slate-200/80">
+        {/* Controls Bar: LLM Switch + Download Chat */}
+        <div className="flex items-center justify-between mb-2 px-1">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isLlmMode}
+            onClick={() => handleToggleLlmMode(!isLlmMode)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all cursor-pointer select-none shadow-2xs ${
+              isLlmMode
+                ? 'bg-purple-600 text-white border border-purple-700 ring-2 ring-purple-100'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
+            }`}
+            title={
+              isLlmMode
+                ? 'LLM Switch ON: Connects directly to LLM. You can ask any question, including general knowledge and questions not on the page.'
+                : 'LLM Switch OFF: Grounded Mode. Answers are strictly grounded in active page text.'
+            }
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isLlmMode ? 'text-amber-300' : 'text-slate-400'}`} />
+            <span>LLM</span>
+            <span
+              className={`w-6 h-3.5 flex items-center rounded-full p-0.5 transition-colors ${
+                isLlmMode ? 'bg-purple-800 justify-end' : 'bg-slate-300 justify-start'
+              }`}
+            >
+              <span className="bg-white w-2.5 h-2.5 rounded-full shadow-xs" />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadChat}
+            disabled={messages.length === 0}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:text-indigo-600 hover:bg-slate-100 disabled:opacity-40 disabled:hover:text-slate-600 disabled:hover:bg-transparent border border-slate-200 transition-colors shadow-2xs cursor-pointer disabled:cursor-not-allowed"
+            title="Download chat transcript as a .txt file"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Download Chat</span>
+          </button>
+        </div>
+
         {isStreaming && (
           <div className="flex justify-center mb-2">
             <button
@@ -775,7 +902,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
             onChange={(e) => setInputPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              context?.title
+              isLlmMode
+                ? 'Ask any question to LLM (with or without page context)...'
+                : context?.title
                 ? `Ask about "${context.title.substring(0, 30)}..."`
                 : 'Ask a question about the active page...'
             }

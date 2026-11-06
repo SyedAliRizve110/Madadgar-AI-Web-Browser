@@ -18,7 +18,8 @@ export interface UserProfilePersonal {
 }
 
 export interface UserProfileAcademic {
-  institution: string;
+  institution: string; // College or University name
+  college?: string; // Alias for institution
   degree: string;
   graduationYear: string;
   major: string;
@@ -43,13 +44,24 @@ export interface UserProfileMemory {
   preferences: UserProfilePreferences;
 }
 
+export type ProfileSectionKey = 'personal' | 'academic' | 'professional' | 'preferences';
+
+export type SkillCategory = 'study' | 'writing' | 'forms' | 'custom' | 'summary' | 'reply' | 'form';
+
 export interface SavedSkill {
   id: string;
   name: string;
+  title?: string; // alias for name
   description: string;
   promptTemplate: string;
-  category: 'study' | 'writing' | 'forms' | 'custom';
+  category: SkillCategory;
   tags: string[];
+  systemPromptAddendum?: string;
+  userPromptTemplate?: string; // alias for promptTemplate
+  requiresProfile?: boolean;
+  targetTab?: 'chat' | 'agent' | 'summarizer';
+  version?: string;
+  isBuiltIn?: boolean;
   createdAt: number;
 }
 
@@ -141,7 +153,7 @@ export interface ChatMessage {
 }
 
 
-export type ContextMenuActionId = 'madadgar_explain' | 'madadgar_translate' | 'madadgar_draft';
+export type ContextMenuActionId = 'madadgar_explain' | 'madadgar_translate' | 'madadgar_draft' | 'custom';
 
 export interface ContextMenuActionPayload {
   actionId: ContextMenuActionId;

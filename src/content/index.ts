@@ -11,6 +11,7 @@ import {
 import { DOMScanner } from './scanner';
 import { BadgeOverlay } from './overlay';
 import { ActionExecutor } from './executor';
+import { ContentGuardrails } from './guardrails';
 import type {
   ExtractReadabilityResponse,
   ScanDOMResponse,
@@ -40,6 +41,19 @@ export function handleContentScriptMessage(
 
   // 1. Unified Page Content / Article Extraction
   if (messageType === 'EXTRACT_READABILITY_CONTENT') {
+    const pageSafety = ContentGuardrails.checkActivePageSafety();
+    if (!pageSafety.safe) {
+      sendResponse({
+        title: typeof document !== 'undefined' ? document.title : 'Restricted Page',
+        textContent: '',
+        byline: null,
+        length: 0,
+        error: pageSafety.reason,
+        isBlacklisted: true,
+      } as ExtractReadabilityResponse);
+      return true;
+    }
+
     extractUnifiedPageContent(document)
       .then((extracted) => {
         const userSelection =
@@ -75,8 +89,22 @@ export function handleContentScriptMessage(
     return true;
   }
 
-  // 3. Interactive DOM Scanner (Task 3.1 & Task 3.2)
+  // 3. Interactive DOM Scanner (Task 3.1, Task 3.2, Task 4.4.1)
   if (messageType === 'SCAN_INTERACTIVE_DOM') {
+    const pageSafety = ContentGuardrails.checkActivePageSafety();
+    if (!pageSafety.safe) {
+      sendResponse({
+        success: false,
+        count: 0,
+        elements: [],
+        url: typeof window !== 'undefined' ? window.location.href : '',
+        title: typeof document !== 'undefined' ? document.title : '',
+        error: pageSafety.reason,
+        isBlacklisted: true,
+      } as ScanDOMResponse);
+      return true;
+    }
+
     try {
       const elements = DOMScanner.scan(document);
       if (message.renderBadges !== false) {
@@ -113,9 +141,9 @@ export function handleContentScriptMessage(
     return true;
   }
 
-  // 5. Clear Badges & Overlay (Task 3.2)
-  if (messageType === 'CLEAR_BADGES') {
-    BadgeOverlay.clearBadges();
+  // 5. Clear Badges & Overlay (Task 3.2 / Task 4.4.4)
+  if (messageType === 'CLEAR_BADGES' || messageType === 'EMERGENCY_KILL_SWITCH') {
+    ContentGuardrails.emergencyTeardown();
     DOMScanner.clear();
     sendResponse({ success: true });
     return true;

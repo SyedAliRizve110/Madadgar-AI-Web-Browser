@@ -2,11 +2,16 @@
   "name": "madadgar",
   "version": "1.0.0",
   "description": "Madadgar - Human-in-the-Loop Chrome Extension Assistant",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SyedAliRizve110/Madadgar-AI-Web-Browser"
+  },
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "zip": "npm run build && node scripts/package-zip.js",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },

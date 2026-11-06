@@ -6,6 +6,7 @@
 
 import { DOMScanner } from './scanner';
 import { BadgeOverlay } from './overlay';
+import { validateFieldActionSafety } from '@/safety/field_sanitizer';
 import type { AgentActionProposal, ExecuteActionResponse } from '@/common/types';
 
 export class ActionExecutor {
@@ -65,7 +66,18 @@ export class ActionExecutor {
       };
     }
 
-    // 5. Dry-run Mode: highlight with dry-run outline and exit without dispatching mutation events
+    // 5. Credential & Sensitive Field Shield (Task 4.4.2)
+    const fieldSafety = validateFieldActionSafety(liveEl, action);
+    if (!fieldSafety.safe) {
+      return {
+        success: false,
+        action,
+        targetId: target_id,
+        error: fieldSafety.reason || 'Blocked by credential safety guardrail.',
+      };
+    }
+
+    // 6. Dry-run Mode: highlight with dry-run outline and exit without dispatching mutation events
     if (dryRun) {
       BadgeOverlay.highlightTarget(target_id, 'dry-run', true);
       return {

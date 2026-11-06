@@ -10,6 +10,7 @@ import {
   getActiveAgentSession,
   clearActiveAgentSession,
   appendAuditLog,
+  getUserProfile,
 } from '@/common/storage_adapter';
 import type {
   AgentActionProposal,
@@ -21,11 +22,13 @@ import type {
   ScannedElement,
   UserProfileMemory,
 } from '@/common/types';
+import { validateDomainSafety } from '@/safety/domain_rules';
+import { validateActionProposal } from '@/safety/action_validator';
 
 export const AGENT_TASK_SESSION_STORAGE_KEY = 'active_task_session';
 export const DEFAULT_MAX_STEPS = 15;
 
-export type AgentSessionListener = (session: AgentTaskSession) => void;
+export type AgentSessionListener = (session: AgentTaskSession | null) => void;
 
 export class AgentOrchestrator {
   private static activeSession: AgentTaskSession | null = null;
@@ -49,7 +52,7 @@ export class AgentOrchestrator {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const maxSteps = options?.maxSteps || DEFAULT_MAX_STEPS;
     const dryRun = Boolean(options?.dryRun);
-    this.profileMemory = options?.profileMemory;
+    this.profileMemory = options?.profileMemory || (await getUserProfile());
 
     const initialSession: AgentTaskSession = {
       taskId,
@@ -141,6 +144,10 @@ export class AgentOrchestrator {
       // 2. Request AI Proposal
       session.status = 'REASONING_AI';
       this.notifyListeners();
+
+      if (!this.profileMemory) {
+        this.profileMemory = await getUserProfile();
+      }
 
       const proposal = await AIGateway.proposeNextAction(
         session.goal,
@@ -494,55 +501,78 @@ export class AgentOrchestrator {
   }
 
   /**
-   * URL safety boundary validation
+   * Immediate Emergency Kill Switch (Task 4.4.4):
+   * Immediately aborts active LLM requests, clears content script overlays,
+   * resets FSM to IDLE, and deletes active_task_session from storage.
    */
-  public static isUrlSafe(url?: string): { safe: boolean; reason?: string } {
-    if (!url) return { safe: true };
-    const u = url.toLowerCase();
+  public static async emergencyKillSwitch(reason = 'Emergency kill switch activated.'): Promise<void> {
+    const session = this.activeSession;
+    const tabId = session?.tabId;
 
-    if (u.startsWith('chrome://') || u.startsWith('chrome-extension://')) {
-      return {
-        safe: false,
-        reason: 'Autonomous agent is prohibited on browser internal and extension URLs.',
-      };
-    }
-
-    const sensitiveDomains = [
-      'bank',
-      'paypal.com',
-      'binance.com',
-      'coinbase.com',
-      'login.gov',
-      'checkout.stripe.com',
-    ];
-
-    for (const d of sensitiveDomains) {
-      if (u.includes(d)) {
-        return {
-          safe: false,
-          reason: `Autonomous interaction with financial / banking domain ("${d}") is restricted for user safety.`,
-        };
+    if (tabId) {
+      try {
+        await this.sendTabMessage(tabId, { type: 'EMERGENCY_KILL_SWITCH' });
+      } catch {
+        // Tab may be closed or navigating
+      }
+      try {
+        await this.clearBadges(tabId);
+      } catch {
+        // ignore
       }
     }
 
-    return { safe: true };
+    if (session) {
+      try {
+        await appendAuditLog({
+          taskId: session.taskId,
+          stepIndex: session.currentStep,
+          actionType: 'fail',
+          description: 'Emergency kill switch triggered',
+          reasoning: reason,
+          userDecision: 'stopped',
+          url: session.url,
+          executionSuccess: false,
+          error: reason,
+        });
+      } catch (logErr) {
+        console.warn('[AgentOrchestrator] Failed to append audit log for kill switch:', logErr);
+      }
+    }
+
+    this.activeSession = null;
+    this.cachedElements = [];
+    try {
+      await clearActiveAgentSession();
+    } catch (err) {
+      console.warn('[AgentOrchestrator] Failed to clear session:', err);
+    }
+    this.notifyListeners();
   }
 
   /**
-   * Proposal safety boundary validation
+   * URL safety boundary validation (Task 4.4.1)
+   */
+  public static isUrlSafe(url?: string): { safe: boolean; reason?: string } {
+    return validateDomainSafety(url);
+  }
+
+  /**
+   * Proposal safety boundary validation (Task 4.4.2 & 4.4.3)
    */
   public static isActionSafe(
     proposal: AgentActionProposal,
     elements: ScannedElement[]
   ): { safe: boolean; reason?: string } {
-    if (proposal.action === 'click' || proposal.action === 'type') {
-      const el = elements.find((e) => e.id === proposal.target_id);
-      if (el?.isPassword) {
-        return {
-          safe: false,
-          reason: 'Autonomous interaction with password fields is strictly prohibited for security.',
-        };
-      }
+    const safety = validateActionProposal(proposal, elements, this.activeSession?.url);
+    if (!safety.safe) {
+      return {
+        safe: false,
+        reason: safety.reason || 'Proposed action failed deterministic safety policy.',
+      };
+    }
+    if (safety.isConsequential) {
+      proposal.is_consequential = true;
     }
     return { safe: true };
   }
@@ -562,7 +592,6 @@ export class AgentOrchestrator {
   }
 
   private static notifyListeners(): void {
-    if (!this.activeSession) return;
     for (const listener of this.listeners) {
       try {
         listener(this.activeSession);

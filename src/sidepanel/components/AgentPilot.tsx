@@ -29,6 +29,8 @@ export interface AgentPilotProps {
   hasTabChanged?: boolean;
   onSyncContext?: () => void;
   onConfigureApiKey?: () => void;
+  initialGoal?: string;
+  onInitialGoalHandled?: () => void;
 }
 
 export const AgentPilot: React.FC<AgentPilotProps> = ({
@@ -36,6 +38,8 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
   profileMemory,
   hasTabChanged = false,
   onSyncContext,
+  initialGoal,
+  onInitialGoalHandled,
 }) => {
   const [session, setSession] = useState<AgentTaskSession | null>(null);
   const [goalInput, setGoalInput] = useState('');
@@ -55,9 +59,13 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
 
     try {
       chrome.runtime.sendMessage({ type: 'GET_AGENT_SESSION' }, (response) => {
-        if (!chrome.runtime.lastError && response?.session) {
-          setSession(response.session);
-          setDryRun(Boolean(response.session.dryRun));
+        if (!chrome.runtime.lastError) {
+          if (response?.session) {
+            setSession(response.session);
+            setDryRun(Boolean(response.session.dryRun));
+          } else if (response && response.session === null) {
+            setSession(null);
+          }
         }
       });
     } catch (err) {
@@ -86,6 +94,13 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
     };
   }, [session?.status]);
+
+  useEffect(() => {
+    if (initialGoal) {
+      setGoalInput(initialGoal);
+      onInitialGoalHandled?.();
+    }
+  }, [initialGoal]);
 
   // 2. Start new task errand
   const handleStartTask = async (customGoal?: string) => {
@@ -156,10 +171,12 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
   // 5. Stop Task
   const handleStopTask = async () => {
     chrome.runtime.sendMessage(
-      { type: 'STOP_AGENT_TASK', reason: 'Stopped by user.' },
+      { type: 'EMERGENCY_KILL_SWITCH', reason: 'Stopped by user.' },
       (response) => {
         if (response?.session) {
           setSession(response.session);
+        } else {
+          setSession(null);
         }
       }
     );

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import React from 'react';
+import { renderToString } from 'react-dom/server';
 import { ChatView } from '../sidepanel/components/ChatView';
 import type { PageContext } from '../common/types';
 
@@ -50,6 +51,21 @@ describe('ChatView Component (Task 2.2)', () => {
     expect(element.props.pendingAction).toEqual(mockAction);
     expect(element.props.pendingAction?.actionId).toBe('madadgar_explain');
     expect(element.props.onActionHandled).toBe(onActionHandled);
+  });
+
+  it('renders LLM mode switch button and Download Chat button in chatbox', () => {
+    const html = renderToString(
+      React.createElement(ChatView, {
+        context: mockContext,
+        language: 'en',
+      })
+    );
+
+    // Verify LLM switch button exists with role="switch"
+    expect(html).toContain('role="switch"');
+    expect(html).toContain('LLM');
+    // Verify Download Chat button exists
+    expect(html).toContain('Download Chat');
   });
 });
 

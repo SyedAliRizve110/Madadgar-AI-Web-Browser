@@ -30,8 +30,9 @@ import {
   type SummaryPromptOptions,
 } from './prompts/summarizer';
 import {
-  buildGroundedSystemInstruction,
   buildGroundedChatContents,
+  buildChatSystemInstruction,
+  type ChatMode,
 } from './prompts/grounded_qa';
 import { serializeActionMap, compressActionMapToBudget } from './token_optimizer';
 import {
@@ -566,24 +567,26 @@ export class AIGateway {
   }
 
   /**
-   * Grounded Page Chat with real-time SSE streaming
+   * Grounded Page Chat or unrestricted LLM Chat with real-time SSE streaming
    */
   public static async groundedChatStream(options: {
     query: string;
-    context: PageContext;
+    context?: PageContext | null;
     history?: ChatMessage[];
     language?: SupportedLanguage;
     apiKey?: string;
     config?: GeminiGenerationConfig;
     signal?: AbortSignal;
     onChunk?: (chunk: string, accumulated: string) => void;
+    mode?: ChatMode;
   }): Promise<string> {
     const apiKey = await this.resolveApiKey(options.apiKey);
     const groqKey = await this.resolveGroqApiKey();
     const language = await this.resolveLanguage(options.language);
+    const mode = options.mode || 'grounded';
 
-    const systemInstruction = buildGroundedSystemInstruction(options.context, language);
-    const contents = buildGroundedChatContents(options.query, options.history, options.context);
+    const systemInstruction = buildChatSystemInstruction(options.context, language, mode);
+    const contents = buildGroundedChatContents(options.query, options.history, options.context || undefined);
 
     return this.executeWithResilience<string>({
       taskName: 'groundedChatStream',

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   buildGroundedSystemInstruction,
   buildGroundedChatContents,
+  buildChatSystemInstruction,
 } from '../ai/prompts/grounded_qa';
 import type { PageContext, ChatMessage } from '../common/types';
 import { AIGateway } from '../ai/ai_gateway';
@@ -58,6 +59,49 @@ describe('Grounded Page QA Engine (Task 2.2)', () => {
       expect(instruction).toContain(
         'If a user highlighted or selected specific text on the page, prioritize answering in relation to that selected excerpt.'
       );
+    });
+  });
+
+  describe('LLM Mode System Instructions (General Intelligence + Page Reference)', () => {
+    it('allows answering any question beyond the page while maintaining page context when available', () => {
+      const instruction = buildChatSystemInstruction(mockContext, 'en', 'llm');
+
+      expect(instruction).toContain('You can answer ANY question the user asks');
+      expect(instruction).toContain('DO NOT refuse or say it is missing');
+      expect(instruction).not.toContain('Answer questions STRICTLY and EXCLUSIVELY based on the provided page context');
+      expect(instruction).toContain('Page Title: "Quantum Computing Breakthroughs"');
+      expect(instruction).toContain('topological qubits with 99.9% error suppression');
+    });
+
+    it('generates conversational Hinglish instructions for LLM mode without outside refusal restrictions', () => {
+      const instruction = buildChatSystemInstruction(mockContext, 'hinglish', 'llm');
+
+      expect(instruction).toContain('User kisi bhi topic par sawaal pooch sakta hai');
+      expect(instruction).toContain('sawaal reject mat karein');
+      expect(instruction).not.toContain('Text ke bahar ki koi fabricated baatein na likhein');
+      expect(instruction).toContain('Conversational, colloquial Hinglish me baat karein');
+    });
+
+    it('gracefully handles missing page context in LLM mode', () => {
+      const instruction = buildChatSystemInstruction(null, 'en', 'llm');
+
+      expect(instruction).toContain('You can answer ANY question the user asks');
+      expect(instruction).not.toContain('PAGE TEXT CONTENT');
+    });
+
+    it('strictly excludes banking and financial portal context from LLM prompts', () => {
+      const bankingContext: PageContext = {
+        tabId: 999,
+        title: 'State Bank of India - Net Banking Portal',
+        url: 'https://retail.onlinesbi.sbi/retail/login.htm',
+        textContent: 'Confidential account balance: INR 50,000. Customer ID: 987654321',
+        length: 70,
+      };
+
+      const instruction = buildChatSystemInstruction(bankingContext, 'en', 'llm');
+      expect(instruction).toContain('SECURITY NOTICE: Active tab is on a protected financial/banking domain');
+      expect(instruction).not.toContain('Confidential account balance');
+      expect(instruction).not.toContain('987654321');
     });
   });
 

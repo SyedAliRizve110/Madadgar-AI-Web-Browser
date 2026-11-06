@@ -380,7 +380,7 @@ Add local profile memory, reusable saved skills with import/export, enforce dete
 
 ---
 
-### Task 4.1: Local Profile Memory Subsystem
+### Task 4.1: Local Profile Memory Subsystem (Status: COMPLETED)
 - **Deliverables:**
   - Create profile data schema in `src/common/types.ts`:
     - Personal: Full Name, Email, Phone, Location.
@@ -393,7 +393,7 @@ Add local profile memory, reusable saved skills with import/export, enforce dete
 
 ---
 
-### Task 4.2: Automated Profile Form-Filling Engine
+### Task 4.2: Automated Profile Form-Filling Engine (Status: COMPLETED)
 - **Deliverables:**
   - Implement form-filling skill: when triggered, the agent inspects page input fields and correlates them with the user's stored profile fields.
   - Model proposes values mapped from the local profile.
@@ -402,7 +402,7 @@ Add local profile memory, reusable saved skills with import/export, enforce dete
 
 ---
 
-### Task 4.3: Saved Skills Catalog & Prompt Recipe Import/Export
+### Task 4.3: Saved Skills Catalog & Prompt Recipe Import/Export (Status: COMPLETED)
 - **Deliverables:**
   - Create `SkillsDrawer.tsx` with default curated one-click skills:
     1. *Exam Notes* (structured revision notes with key formulas/concepts).
@@ -415,7 +415,7 @@ Add local profile memory, reusable saved skills with import/export, enforce dete
 
 ---
 
-### Task 4.4: Deterministic Code-Level Safety Guardrails
+### Task 4.4: Deterministic Code-Level Safety Guardrails (Status: COMPLETED)
 Enforce non-negotiable safety guardrails directly in TypeScript code:
 
 #### 4.4.1: Banking / UPI / Financial Domain Blacklist
@@ -439,7 +439,7 @@ Enforce non-negotiable safety guardrails directly in TypeScript code:
 
 ---
 
-### Task 4.5: Release Packaging, Distribution ZIP & Documentation
+### Task 4.5: Release Packaging, Distribution ZIP & Documentation (Status: COMPLETED)
 - **Deliverables:**
   - Verify build outputs an optimized `dist/` directory ready for Chrome *Load unpacked*.
   - Add build script `npm run zip` to generate `madadgar-v1.0.0.zip` for GitHub Releases.
@@ -455,13 +455,13 @@ Enforce non-negotiable safety guardrails directly in TypeScript code:
 ---
 
 ### Phase 4 Acceptance Criteria & Verification
-- [ ] User profile data saves and populates form fields accurately.
-- [ ] Saved skills can be triggered with one click, exported to JSON, and imported back.
-- [ ] Financial/banking URLs are blocked by deterministic code checks.
-- [ ] Password and OTP fields cannot be read or typed into by the agent.
-- [ ] Consequential buttons require explicit double confirmation.
-- [ ] Kill switch instantly halts all active tasks.
-- [ ] Clean ZIP archive can be downloaded and installed via *Load unpacked* by a new user.
+- [x] User profile data saves and populates form fields accurately.
+- [x] Saved skills can be triggered with one click, exported to JSON, and imported back.
+- [x] Financial/banking URLs are blocked by deterministic code checks.
+- [x] Password and OTP fields cannot be read or typed into by the agent.
+- [x] Consequential buttons require explicit double confirmation.
+- [x] Kill switch instantly halts all active tasks.
+- [x] Clean ZIP archive can be downloaded and installed via *Load unpacked* by a new user.
 
 ---
 

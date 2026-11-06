@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Madadgar — Human-in-the-Loop AI Browser Assistant</title>
+  <meta name="description" content="Madadgar is a privacy-first, human-in-the-loop Chrome Extension powered by Gemini and Groq with grounded reading, multimodal vision, guided browser actions, and deterministic safety guardrails.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none'><rect x='4' y='4' width='92' height='92' rx='22' fill='%234f46e5'/><path d='M26 74V40L50 60L74 40V74' stroke='white' stroke-width='9' stroke-linecap='round' stroke-linejoin='round'/><path d='M50 15.5L53 22L59.5 25L53 28L50 34.5L47 28L40.5 25L47 22Z' fill='%23e0f2fe'/></svg>">
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-light: #eef2ff;
+      --accent: #7c3aed;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --bg-body: #f8fafc;
+      --bg-card: #ffffff;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--text-main);
+      background-color: var(--bg-body);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      transition: color 0.15s ease;
+    }
+
+    a:hover {
+      color: var(--primary-hover);
+    }
+
+    /* Container */
+    .container {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    /* Header Nav */
+    header {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .nav-wrapper {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 4.5rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .brand svg {
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 8px;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .nav-links a:hover {
+      color: var(--primary);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: #ffffff !important;
+      box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 18px rgba(79, 70, 229, 0.35);
+    }
+
+    .btn-secondary {
+      background: #ffffff;
+      color: var(--text-main) !important;
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #f1f5f9;
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 5rem 0 3.5rem;
+      text-align: center;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      line-height: 1.2;
+      letter-spacing: -0.025em;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, #0f172a 30%, #4338ca 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 2.25rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* Highlights Ribbon */
+    .highlights {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.25rem;
+      margin: 3.5rem 0 4.5rem;
+    }
+
+    .highlight-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+
+    .highlight-icon {
+      font-size: 1.5rem;
+      background: var(--primary-light);
+      width: 2.75rem;
+      height: 2.75rem;
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .highlight-card h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .highlight-card p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    /* Section Headers */
+    .section-header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .section-header h2 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.5rem;
+    }
+
+    .section-header p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* Feature Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+      margin-bottom: 5rem;
+    }
+
+    .feature-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.75rem;
+      position: relative;
+      overflow: hidden;
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .feature-box:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.05);
+    }
+
+    .feature-tag {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-box h3 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-box p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .feature-pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .feature-pill {
+      font-size: 0.75rem;
+      background: #f1f5f9;
+      color: #334155;
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+    }
+
+    /* Architecture / Safety Card */
+    .safety-banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      color: #ffffff;
+      border-radius: 1rem;
+      padding: 3rem 2rem;
+      margin-bottom: 5rem;
+    }
+
+    .safety-banner h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+    }
+
+    .safety-banner p {
+      color: #cbd5e1;
+      max-width: 650px;
+      margin-bottom: 2rem;
+      font-size: 1.05rem;
+    }
+
+    .safety-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .safety-card {
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+    }
+
+    .safety-card h4 {
+      font-size: 1.05rem;
+      color: #f8fafc;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .safety-card p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-bottom: 0;
+    }
+
+    /* Installation Steps */
+    .install-steps {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 2.5rem 2rem;
+      margin-bottom: 5rem;
+    }
+
+    .steps-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+
+    .step-item {
+      position: relative;
+    }
+
+    .step-num {
+      width: 2.5rem;
+      height: 2.5rem;
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 700;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      margin-bottom: 1rem;
+    }
+
+    .step-item h4 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .step-item p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    code {
+      background: #f1f5f9;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85em;
+      color: #0f172a;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      background: #ffffff;
+      padding: 3rem 0;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 2.25rem;
+      }
+      .nav-links {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header>
+    <div class="container nav-wrapper">
+      <a href="#" class="brand">
+        <svg viewBox="0 0 100 100" fill="none">
+          <defs>
+            <linearGradient id="navGrad" x1="0" y1="0" x2="100" y2="100">
+              <stop offset="0%" stop-color="#4f46e5" />
+              <stop offset="100%" stop-color="#7c3aed" />
+            </linearGradient>
+          </defs>
+          <rect x="4" y="4" width="92" height="92" rx="22" fill="url(#navGrad)"/>
+          <path d="M26 74V40L50 60L74 40V74" stroke="white" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M50 15.5L53 22L59.5 25L53 28L50 34.5L47 28L40.5 25L47 22Z" fill="#e0f2fe"/>
+        </svg>
+        <span>Madadgar</span>
+      </a>
+
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#safety">Safety Charter</a></li>
+        <li><a href="#install">Quickstart</a></li>
+        <li><a href="https://github.com/SyedAliRizve110/Madadgar-AI-Web-Browser" target="_blank" rel="noreferrer">GitHub</a></li>
+      </ul>
+
+      <div>
+        <a href="./madadgar-v1.0.0.zip" download="madadgar-v1.0.0.zip" class="btn btn-primary">
+          Download v1.0.0 ZIP
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="badge-pill">
+        <span>🛡️ Manifest V3 &bull; 100% Local State &bull; Human-in-the-Loop</span>
+      </div>
+      <h1>Your Private AI Sidekick for Chrome</h1>
+      <p>
+        Madadgar purifies page articles, parses YouTube transcripts, inspects visual charts, and assists in multi-step browser errands—with every critical action requiring your explicit approval.
+      </p>
+
+      <div class="hero-actions">
+        <a href="./madadgar-v1.0.0.zip" download="madadgar-v1.0.0.zip" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download Extension (v1.0.0 ZIP)
+        </a>
+        <a href="https://github.com/SyedAliRizve110/Madadgar-AI-Web-Browser" target="_blank" rel="noreferrer" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          Explore Source on GitHub
+        </a>
+      </div>
+    </section>
+
+    <!-- Highlights Grid -->
+    <section class="highlights">
+      <div class="highlight-card">
+        <div class="highlight-icon">👁️</div>
+        <div>
+          <h4>The Eyes</h4>
+          <p>Readability purification and public YouTube caption extraction with English/Hinglish toggles.</p>
+        </div>
+      </div>
+
+      <div class="highlight-card">
+        <div class="highlight-icon">🧠</div>
+        <div>
+          <h4>The Brain</h4>
+          <p>Strictly grounded page chat, right-click context menu shortcuts, and multimodal visual inspection.</p>
+        </div>
+      </div>
+
+      <div class="highlight-card">
+        <div class="highlight-icon">🤝</div>
+        <div>
+          <h4>The Hands (HITL)</h4>
+          <p>Interactive DOM indexer with numbered badges, natural language locator, and step-by-step approvals.</p>
+        </div>
+      </div>
+
+      <div class="highlight-card">
+        <div class="highlight-icon">🔒</div>
+        <div>
+          <h4>Deterministic Safety</h4>
+          <p>Hardcoded banking domain blacklists, password shields, consequential action double-checks, and kill switches.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features">
+      <div class="section-header">
+        <h2>Built for Everyday Web Tasks</h2>
+        <p>Combining Google Gemini 2.5 Flash-Lite intelligence with deterministic safety guarantees.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-box">
+          <span class="feature-tag">Reading &amp; Summarization</span>
+          <h3>Smart Reader &amp; Bilingual Mode</h3>
+          <p>Strips web clutter, extracts article text via Readability, and fetches YouTube transcripts. Switches effortlessly between English and conversational Hinglish.</p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">TL;DR Box</span>
+            <span class="feature-pill">5 Key Takeaways</span>
+            <span class="feature-pill">Next Steps</span>
+            <span class="feature-pill">Hinglish Toggle</span>
+          </div>
+        </div>
+
+        <div class="feature-box">
+          <span class="feature-tag">Contextual Intelligence</span>
+          <h3>Grounded QA &amp; Multimodal Vision</h3>
+          <p>Ask anything about the active tab. Answers are grounded strictly in page contents to prevent hallucinations. Viewport capture lets you query complex charts and diagrams.</p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Streaming SSE</span>
+            <span class="feature-pill">Strict Anti-Hallucination</span>
+            <span class="feature-pill">Screenshot &amp; Ask</span>
+          </div>
+        </div>
+
+        <div class="feature-box">
+          <span class="feature-tag">Form &amp; Job Automation</span>
+          <h3>Profile Memory &amp; Auto Form-Fill</h3>
+          <p>Store your personal, education, and career details securely in local storage. One-click form-filling maps your details into inputs with individual approval prompts.</p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Zero Outbound Sync</span>
+            <span class="feature-pill">Internship Forms</span>
+            <span class="feature-pill">Field Mapping</span>
+          </div>
+        </div>
+
+        <div class="feature-box">
+          <span class="feature-tag">Human-In-The-Loop Errand Pilot</span>
+          <h3>Guided Browser Actions</h3>
+          <p>Scans the DOM, highlights interactable elements with non-intrusive numbered badges, and proposes actions one-by-one with Approve, Skip, Stop, and Dry-Run options.</p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Numbered Badges</span>
+            <span class="feature-pill">FSM Orchestrator</span>
+            <span class="feature-pill">Dry-Run Preview</span>
+          </div>
+        </div>
+
+        <div class="feature-box">
+          <span class="feature-tag">Custom Workflows</span>
+          <h3>Saved Skills Catalog &amp; Recipes</h3>
+          <p>Trigger pre-built recipes like Exam Notes, Hinglish Explainer, and Professional Email Drafter, or create custom prompts and export/import them as JSON.</p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Exam Notes</span>
+            <span class="feature-pill">JSON Import/Export</span>
+            <span class="feature-pill">Custom Skills</span>
+          </div>
+        </div>
+
+        <div class="feature-box">
+          <span class="feature-tag">Resilience &amp; Failover</span>
+          <h3>Free-Tier Fallback Gateway</h3>
+          <p>Built for the generous free tiers of Gemini and Groq. Handles HTTP 429 rate limits with exponential backoff and transparently fails over to Groq Llama 3.3.</p>
+          <div class="feature-pill-list">
+            <span class="feature-pill">Gemini 2.5 Flash-Lite</span>
+            <span class="feature-pill">Groq Fallback</span>
+            <span class="feature-pill">Zero SDK Bloat</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Safety Banner -->
+    <section id="safety" class="safety-banner">
+      <h2>Deterministic Code-Level Safety</h2>
+      <p>
+        AI prompt guardrails can be bypassed; code-level checks cannot. Madadgar enforces strict physical boundaries directly in TypeScript.
+      </p>
+
+      <div class="safety-grid">
+        <div class="safety-card">
+          <h4>🚫 Banking Blacklist</h4>
+          <p>Completely disables scanning and actions on banking, payment, and UPI portals (SBI, HDFC, Paytm, Razorpay, Stripe, PayPal).</p>
+        </div>
+
+        <div class="safety-card">
+          <h4>🔒 Credential Shield</h4>
+          <p>Password, CVV, OTP, and sensitive financial fields are physically blocked from being inspected or typed into by the agent.</p>
+        </div>
+
+        <div class="safety-card">
+          <h4>⚠️ Consequential Action Gate</h4>
+          <p>Critical actions like Submit, Pay, Transfer, Delete, or Confirm Order require elevated double-confirmation before execution.</p>
+        </div>
+
+        <div class="safety-card">
+          <h4>🛑 Instant Kill Switch</h4>
+          <p>One-click emergency button in the header instantly aborts active LLM streams, resets orchestrator state, and clears badges.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Steps -->
+    <section id="install" class="install-steps">
+      <div class="section-header" style="margin-bottom: 2rem;">
+        <h2>How to Install Madadgar in 2 Minutes</h2>
+        <p>No Chrome Web Store account needed. Installs cleanly via Developer Mode.</p>
+      </div>
+
+      <div class="steps-list">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <h4>Download &amp; Extract</h4>
+          <p>Download <a href="./madadgar-v1.0.0.zip" download><code>madadgar-v1.0.0.zip</code></a> and extract the folder to your computer.</p>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <h4>Open Extensions Page</h4>
+          <p>In Chrome, navigate to <code>chrome://extensions</code> and toggle the <strong>Developer mode</strong> switch in the top-right corner.</p>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <h4>Load Unpacked</h4>
+          <p>Click <strong>Load unpacked</strong> and select the extracted extension folder (or the <code>dist/</code> directory).</p>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">4</div>
+          <h4>Add Free API Key</h4>
+          <p>Click the Madadgar icon in your toolbar, open <strong>Settings</strong>, and enter your free Gemini API key from Google AI Studio.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-content">
+      <div>
+        <p><strong>Madadgar</strong> &mdash; Human-in-the-Loop Browser Assistant</p>
+        <p style="margin-top: 0.25rem;">Built with Manifest V3, React 18, Tailwind CSS, and Google Gemini.</p>
+      </div>
+      <div>
+        <a href="./madadgar-v1.0.0.zip" download class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.4rem 0.8rem;">
+          Download Archive (.zip)
+        </a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
+

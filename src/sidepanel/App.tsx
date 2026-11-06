@@ -12,14 +12,17 @@ import {
   AlertTriangle,
   Languages,
   Camera,
+  User,
 } from 'lucide-react';
-import { getSettings } from '@/common/storage_adapter';
-import type { AppSettings, SupportedLanguage, ExtractReadabilityResponse } from '@/common/types';
+import { getSettings, getUserProfile } from '@/common/storage_adapter';
+import type { AppSettings, SupportedLanguage, ExtractReadabilityResponse, UserProfileMemory, SavedSkill, ContextMenuActionPayload } from '@/common/types';
 import { SettingsModal } from './components/SettingsModal';
 import { ScreenshotModal } from './components/ScreenshotModal';
 import { SummaryCard } from './components/SummaryCard';
 import { ChatView } from './components/ChatView';
 import { AgentPilot } from './components/AgentPilot';
+import { ProfileManager } from './components/ProfileManager';
+import { SkillsDrawer } from './components/SkillsDrawer';
 import { RateLimitBanner } from './components/RateLimitBanner';
 import { MadadgarLogo } from './components/MadadgarLogo';
 import { useTabContext } from './hooks/useTabContext';
@@ -28,7 +31,7 @@ import type { StructuredSummary } from '@/ai/prompts/summarizer';
 import { isYouTubeUrl, extractYouTubeVideoId } from '@/content/extractor';
 
 
-export type TabType = 'summarizer' | 'chat' | 'agent' | 'skills' | 'settings';
+export type TabType = 'summarizer' | 'chat' | 'agent' | 'profile' | 'skills' | 'settings';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('summarizer');
@@ -37,6 +40,9 @@ export const App: React.FC = () => {
   const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false);
   const [injectedVisualPair, setInjectedVisualPair] = useState<{ question: string; answer: string; imageThumbnail?: string } | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfileMemory | undefined>(undefined);
+  const [skillPendingAction, setSkillPendingAction] = useState<ContextMenuActionPayload | null>(null);
+  const [agentInitialGoal, setAgentInitialGoal] = useState<string | null>(null);
 
   const {
     context: activePageContext,
@@ -53,6 +59,21 @@ export const App: React.FC = () => {
       setActiveTab('chat');
     }
   }, [pendingAction]);
+
+  const handleRunSkill = (skill: SavedSkill) => {
+    if (skill.targetTab === 'agent' || skill.category === 'forms' || (skill as any).category === 'form') {
+      setAgentInitialGoal(skill.promptTemplate);
+      setActiveTab('agent');
+    } else {
+      setSkillPendingAction({
+        actionId: 'custom',
+        prompt: skill.promptTemplate,
+        selectedText: '',
+        timestamp: Date.now(),
+      });
+      setActiveTab('chat');
+    }
+  };
 
 
   const [summary, setSummary] = useState<StructuredSummary | null>(null);
@@ -84,6 +105,9 @@ export const App: React.FC = () => {
       if (s?.defaultLanguage) {
         setSummarizerLang(s.defaultLanguage);
       }
+    });
+    getUserProfile().then((p) => {
+      setUserProfile(p);
     });
   };
 
@@ -236,11 +260,18 @@ export const App: React.FC = () => {
 
   const handleKillSwitch = () => {
     setKillSwitchTriggered(true);
-    if (typeof chrome !== 'undefined' && chrome.runtime) {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       chrome.runtime.sendMessage(
-        { type: 'STOP_AGENT_TASK', reason: 'Emergency kill switch triggered by user.' },
+        { type: 'EMERGENCY_KILL_SWITCH', reason: 'Emergency kill switch triggered by user.' },
         () => {}
       );
+    }
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+        if (tab?.id) {
+          chrome.tabs.sendMessage(tab.id, { type: 'EMERGENCY_KILL_SWITCH' }, () => {});
+        }
+      }).catch(() => {});
     }
     setTimeout(() => {
       setKillSwitchTriggered(false);
@@ -382,6 +413,19 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('profile')}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+            activeTab === 'profile'
+              ? 'bg-white text-indigo-600 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+          }`}
+          title="Local Profile Memory"
+        >
+          <User className="w-3.5 h-3.5" />
+          <span>Profile</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('skills')}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-colors ${
             activeTab === 'skills'
@@ -501,8 +545,14 @@ export const App: React.FC = () => {
                 language={settings?.defaultLanguage || 'en'}
                 hasTabChanged={hasTabChanged}
                 onSyncContext={() => syncWithActiveTab(true)}
-                pendingAction={pendingAction}
-                onActionHandled={clearPendingAction}
+                pendingAction={skillPendingAction || pendingAction}
+                onActionHandled={() => {
+                  if (skillPendingAction) {
+                    setSkillPendingAction(null);
+                  } else {
+                    clearPendingAction();
+                  }
+                }}
                 onOpenScreenshotModal={() => setIsScreenshotModalOpen(true)}
                 injectedVisualPair={injectedVisualPair}
                 onInjectedVisualHandled={() => setInjectedVisualPair(null)}
@@ -530,25 +580,32 @@ export const App: React.FC = () => {
             ) : (
               <AgentPilot
                 context={activePageContext}
+                profileMemory={userProfile}
                 hasTabChanged={hasTabChanged}
                 onSyncContext={() => syncWithActiveTab(true)}
                 onConfigureApiKey={() => setIsSettingsOpen(true)}
+                initialGoal={agentInitialGoal || undefined}
+                onInitialGoalHandled={() => setAgentInitialGoal(null)}
               />
             )}
           </div>
         )}
 
+        {activeTab === 'profile' && (
+          <div className="h-full flex-1 min-h-0 flex flex-col">
+            <ProfileManager
+              onProfileUpdated={(updated) => setUserProfile(updated)}
+            />
+          </div>
+        )}
+
         {activeTab === 'skills' && (
-          <div className="flex flex-col items-center justify-center h-full text-center p-6 text-slate-500 space-y-3">
-            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-              <BookmarkCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="font-medium text-slate-800 text-sm">Saved Skills</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-xs">
-                One-click prompt recipes for studying, drafting responses, and filling profile data.
-              </p>
-            </div>
+          <div className="h-full flex-1 min-h-0 flex flex-col">
+            <SkillsDrawer
+              onRunSkill={handleRunSkill}
+              onNavigateTab={(tab) => setActiveTab(tab)}
+              activeProfile={userProfile}
+            />
           </div>
         )}
 
@@ -596,10 +653,38 @@ export const App: React.FC = () => {
 
               <button
                 onClick={() => setIsSettingsOpen(true)}
-                className="w-full mt-2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5"
+                className="w-full mt-2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Settings className="w-3.5 h-3.5" />
                 <span>Open Settings Modal</span>
+              </button>
+            </div>
+
+            {/* Profile Memory Summary Card */}
+            <div className="p-4 bg-white rounded-xl border border-slate-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-sm text-slate-800 flex items-center gap-1.5">
+                  <User className="w-4 h-4 text-indigo-600" />
+                  <span>Profile Memory</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('profile')}
+                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
+                >
+                  Manage
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Store your personal, academic, and professional details locally for safe, one-click form filling during errands.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('profile')}
+                className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-lg text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>Open Profile Manager</span>
               </button>
             </div>
           </div>
@@ -608,10 +693,15 @@ export const App: React.FC = () => {
 
       {/* Footer / Status Bar */}
       <footer className="px-3 py-2 bg-white border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
-        <div className="flex items-center space-x-1.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab('profile')}
+          className="flex items-center space-x-1.5 hover:text-indigo-600 transition-colors cursor-pointer"
+          title="Open Profile Memory"
+        >
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-          <span className="font-medium text-slate-600">Local-Only Memory</span>
-        </div>
+          <span className="font-medium text-slate-600 hover:text-indigo-600">Local-Only Memory</span>
+        </button>
         <div className="flex items-center space-x-1">
           <span className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-emerald-500' : 'bg-amber-400'}`}></span>
           <span>{hasApiKey ? 'Ready' : 'API Key Needed'}</span>
