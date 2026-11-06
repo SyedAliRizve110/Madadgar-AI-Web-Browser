@@ -134,6 +134,21 @@ export const ScreenshotModal: React.FC<ScreenshotModalProps> = ({
     }
   };
 
+  const handleRequestSiteAccess = async () => {
+    if (typeof chrome !== 'undefined' && chrome.permissions?.request) {
+      try {
+        const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
+        if (granted) {
+          handleCaptureScreenshot();
+          return;
+        }
+      } catch (err) {
+        console.warn('[ScreenshotModal] permissions.request notice:', err);
+      }
+    }
+    handleCaptureScreenshot();
+  };
+
   const handleAskAI = async (customPrompt?: string) => {
     const promptToSend = (customPrompt || question).trim();
     if (!promptToSend || isStreaming || !imageData) return;
@@ -315,11 +330,22 @@ export const ScreenshotModal: React.FC<ScreenshotModalProps> = ({
                   💡 <strong>Quick Fix:</strong> If this tab was open before updating the extension, please refresh this webpage (<kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">F5</kbd> or <kbd className="px-1 py-0.5 bg-white border rounded text-[10px]">Ctrl+R</kbd>) and click <strong>Try Again</strong> below.
                 </div>
               )}
-              <div className="pl-6 pt-1">
+              <div className="pl-6 pt-1 flex items-center gap-2">
+                {(captureError.includes('permission') ||
+                  captureError.includes('<all_urls>') ||
+                  captureError.includes('activeTab')) && (
+                  <button
+                    type="button"
+                    onClick={handleRequestSiteAccess}
+                    className="px-3 py-1 rounded-md bg-indigo-600 text-white font-medium text-[11px] hover:bg-indigo-700 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    Grant Site Access
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleCaptureScreenshot}
-                  className="px-3 py-1 rounded-md bg-indigo-600 text-white font-medium text-[11px] hover:bg-indigo-700 transition-colors cursor-pointer shadow-2xs"
+                  className="px-3 py-1 rounded-md bg-white border border-slate-300 text-slate-700 font-medium text-[11px] hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
                 >
                   Try Again
                 </button>

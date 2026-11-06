@@ -164,7 +164,11 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
 
   // 6. Reset Session to IDLE
   const handleResetSession = () => {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({ type: 'CLEAR_AGENT_SESSION' }, () => {});
+    }
     setSession(null);
+    setGoalInput('');
     setErrorMessage(null);
     if (context?.tabId && typeof chrome !== 'undefined' && chrome.tabs) {
       chrome.tabs.sendMessage(context.tabId, { type: 'CLEAR_BADGES' }, () => {});

@@ -62,6 +62,13 @@ export class DOMScanner {
   public static getElementById(id: number): HTMLElement | null {
     const el = this.elementRegistry.get(id);
     if (!el || !el.isConnected) {
+      if (typeof document !== 'undefined') {
+        const found = document.querySelector(`[data-madadgar-id="${id}"]`) as HTMLElement | null;
+        if (found && found.isConnected) {
+          this.elementRegistry.set(id, found);
+          return found;
+        }
+      }
       return null;
     }
     return el;

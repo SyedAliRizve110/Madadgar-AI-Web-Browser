@@ -16,8 +16,8 @@ AgentOrchestrator.rehydrate().catch((err) => {
   console.warn('[Madadgar Service Worker] Session rehydration failed:', err);
 });
 
-// Register context menu click listener synchronously on worker boot (Task 2.3)
-ContextMenuManager.registerClickListener();
+// Initialize context menus and register click listener synchronously on worker boot (Task 2.3)
+ContextMenuManager.init();
 
 // Configure side panel behavior to open when user clicks the extension action icon
 chrome.sidePanel
@@ -99,6 +99,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'STOP_AGENT_TASK') {
     AgentOrchestrator.stopTask(message.reason)
       .then((session) => sendResponse({ success: true, session }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === 'CLEAR_AGENT_SESSION' || message?.type === 'RESET_AGENT_SESSION') {
+    AgentOrchestrator.clearSession()
+      .then(() => sendResponse({ success: true }))
       .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }

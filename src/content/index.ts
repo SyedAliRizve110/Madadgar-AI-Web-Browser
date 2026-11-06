@@ -222,6 +222,31 @@ export function handleContentScriptMessage(
 
 export { DOMScanner, BadgeOverlay };
 
+let selectionDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
+export function handleSelectionChange(): void {
+  if (typeof window === 'undefined' || typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+    return;
+  }
+  if (selectionDebounceTimeout) {
+    clearTimeout(selectionDebounceTimeout);
+  }
+  selectionDebounceTimeout = setTimeout(() => {
+    try {
+      const sel = window.getSelection()?.toString()?.trim() || '';
+      chrome.runtime
+        .sendMessage({
+          type: 'PAGE_SELECTION_CHANGED',
+          selection: sel,
+        })
+        .catch(() => {
+          // Expected when side panel is not listening
+        });
+    } catch {
+      // Ignored
+    }
+  }, 250);
+}
+
 /**
  * Initialize runtime listener if chrome.runtime is available.
  */
@@ -229,6 +254,10 @@ export function initContentScript(): void {
   if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener(handleContentScriptMessage);
     console.log('[Madadgar Content Script] Registered Madadgar content listeners');
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('mouseup', handleSelectionChange);
   }
 }
 

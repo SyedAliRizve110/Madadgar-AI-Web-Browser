@@ -174,8 +174,17 @@ export function useTabContext(options: UseTabContextOptions = {}): UseTabContext
       }
     }
 
-    // Direct runtime message listener for context menu action
+    // Direct runtime message listener for context menu action & live selection updates
     const runtimeListener = (message: any) => {
+      if (message?.type === 'PAGE_SELECTION_CHANGED') {
+        setContext((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            selection: message.selection ? message.selection : undefined,
+          };
+        });
+      }
       if (message?.type === 'CONTEXT_MENU_ACTION' && message.payload) {
         setPendingAction(message.payload);
       }

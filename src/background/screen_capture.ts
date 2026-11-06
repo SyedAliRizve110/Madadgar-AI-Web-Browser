@@ -77,23 +77,37 @@ export class ScreenCaptureManager {
         quality,
       };
 
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const callback = (resUrl?: string) => {
-          if (chrome.runtime?.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-          } else if (!resUrl) {
-            reject(new Error('chrome.tabs.captureVisibleTab returned empty data URL.'));
-          } else {
-            resolve(resUrl);
-          }
-        };
+      const executeCapture = (winId?: number) => {
+        return new Promise<string>((resolve, reject) => {
+          const callback = (resUrl?: string) => {
+            if (chrome.runtime?.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+            } else if (!resUrl) {
+              reject(new Error('chrome.tabs.captureVisibleTab returned empty data URL.'));
+            } else {
+              resolve(resUrl);
+            }
+          };
 
-        if (typeof targetWindowId === 'number' && targetWindowId > 0) {
-          chrome.tabs.captureVisibleTab(targetWindowId, captureOptions, callback);
+          if (typeof winId === 'number' && winId > 0) {
+            chrome.tabs.captureVisibleTab(winId, captureOptions, callback);
+          } else {
+            chrome.tabs.captureVisibleTab(captureOptions, callback);
+          }
+        });
+      };
+
+      let dataUrl: string;
+      try {
+        dataUrl = await executeCapture(targetWindowId);
+      } catch (firstErr: any) {
+        const msg = String(firstErr?.message || firstErr);
+        if (typeof targetWindowId === 'number' && targetWindowId > 0 && /window/i.test(msg)) {
+          dataUrl = await executeCapture(undefined);
         } else {
-          chrome.tabs.captureVisibleTab(captureOptions, callback);
+          throw firstErr;
         }
-      });
+      }
 
       return {
         success: true,
