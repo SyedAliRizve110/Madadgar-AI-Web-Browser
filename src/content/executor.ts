@@ -183,6 +183,21 @@ export class ActionExecutor {
       el.dispatchEvent(new MouseEvent('click', opts));
     }
 
+    // For form submit buttons, additionally invoke requestSubmit() on the parent form
+    try {
+      const form = (el as any).form || el.closest('form');
+      const isSubmit =
+        (el as HTMLInputElement).type === 'submit' ||
+        el.getAttribute('type') === 'submit' ||
+        (el.tagName.toLowerCase() === 'button' && (!el.getAttribute('type') || el.getAttribute('type') === 'submit'));
+
+      if (form && isSubmit && typeof form.requestSubmit === 'function') {
+        form.requestSubmit(el);
+      }
+    } catch {
+      // Ignored if validation blocks submission or form already submitted
+    }
+
     return true;
   }
 
