@@ -6,9 +6,15 @@
 import { MessageBus } from './message_bus';
 import { ContextMenuManager } from './context_menus';
 import { ScreenCaptureManager } from './screen_capture';
+import { AgentOrchestrator } from './agent_orchestrator';
 
 // Initialize persistent bidirectional message bus & tab tracking
 MessageBus.init();
+
+// Rehydrate active task session on service worker startup (Task 3.6 / Task 3.8)
+AgentOrchestrator.rehydrate().catch((err) => {
+  console.warn('[Madadgar Service Worker] Session rehydration failed:', err);
+});
 
 // Register context menu click listener synchronously on worker boot (Task 2.3)
 ContextMenuManager.registerClickListener();
@@ -61,6 +67,52 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse(result);
     });
     return true; // asynchronous response
+  }
+
+  // HITL Agent Orchestrator Commands (Task 3.6)
+  if (message?.type === 'START_AGENT_TASK') {
+    AgentOrchestrator.startTask(message.goal, message.tabId, {
+      maxSteps: message.maxSteps,
+      dryRun: message.dryRun,
+      profileMemory: message.profileMemory,
+      url: message.url,
+    })
+      .then((session) => sendResponse({ success: true, session }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === 'APPROVE_AGENT_STEP') {
+    AgentOrchestrator.approveStep()
+      .then((session) => sendResponse({ success: true, session }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === 'SKIP_AGENT_STEP') {
+    AgentOrchestrator.skipStep()
+      .then((session) => sendResponse({ success: true, session }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === 'STOP_AGENT_TASK') {
+    AgentOrchestrator.stopTask(message.reason)
+      .then((session) => sendResponse({ success: true, session }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === 'GET_AGENT_SESSION') {
+    const session = AgentOrchestrator.getSession();
+    if (session) {
+      sendResponse({ success: true, session });
+    } else {
+      AgentOrchestrator.rehydrate().then((rehydrated) => {
+        sendResponse({ success: true, session: rehydrated });
+      });
+    }
+    return true;
   }
 
   return false;

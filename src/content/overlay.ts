@@ -327,12 +327,11 @@ export class BadgeOverlay {
       return false;
     }
 
-    if (scrollIntoView) {
+    if (scrollIntoView && typeof liveEl.scrollIntoView === 'function') {
       try {
         liveEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
       } catch {
         // Fallback for older DOMs
-        liveEl.scrollIntoView();
       }
     }
 

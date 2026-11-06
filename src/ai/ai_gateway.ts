@@ -33,11 +33,21 @@ import {
   buildGroundedSystemInstruction,
   buildGroundedChatContents,
 } from './prompts/grounded_qa';
-import { serializeActionMap } from './token_optimizer';
+import { serializeActionMap, compressActionMapToBudget } from './token_optimizer';
 import {
   buildElementLocatorPrompt,
   parseElementLocatorResponse,
 } from './prompts/element_locator';
+import {
+  buildAgentPlannerPrompt,
+  parseAgentActionProposal,
+  buildErrorCorrectionPrompt,
+} from './prompts/agent_planner';
+import type {
+  AgentActionProposal,
+  AgentTaskStepHistory,
+  UserProfileMemory,
+} from '@/common/types';
 
 export class RateLimitCooldownError extends Error {
   public cooldownSeconds: number;
@@ -828,6 +838,114 @@ export class AIGateway {
         : (rawResponse as any)?.text || JSON.stringify(rawResponse);
 
     return parseElementLocatorResponse(rawString);
+  }
+
+  /**
+   * HITL Agent Action Planner (Task 3.6)
+   * Proposes the single best next action adhering to architecture.md Section 5.2.
+   * Includes strict JSON validation and automatic error-correction retry.
+   */
+  public static async proposeNextAction(
+    goal: string,
+    elements: ScannedElement[],
+    history: AgentTaskStepHistory[] = [],
+    profileMemory?: UserProfileMemory,
+    options?: BaseAIOptions
+  ): Promise<AgentActionProposal> {
+    if (!elements || elements.length === 0) {
+      return {
+        action: 'fail',
+        reason: 'No interactive elements detected on the active webpage to interact with.',
+      };
+    }
+
+    const apiKey = await this.resolveApiKey(options?.apiKey);
+    const groqKey = await this.resolveGroqApiKey();
+    const language = await this.resolveLanguage(options?.language);
+
+    // Compress action map within 2200 token budget
+    const { serialized: actionMap } = compressActionMapToBudget(elements, 2200);
+
+    const { systemInstruction, userPrompt } = buildAgentPlannerPrompt(
+      goal,
+      actionMap,
+      history,
+      profileMemory,
+      language
+    );
+
+    const rawResponse = await this.executeWithResilience<string>({
+      taskName: 'proposeNextAction',
+      signal: options?.signal,
+      geminiAction: () =>
+        generateContent({
+          apiKey,
+          prompt: userPrompt,
+          systemInstruction,
+          config: {
+            temperature: 0.2,
+            ...options?.config,
+          },
+          signal: options?.signal,
+        }),
+      groqAction: groqKey
+        ? () =>
+            generateGroqContent({
+              apiKey: groqKey,
+              messages: formatGeminiPromptToGroqMessages(userPrompt, systemInstruction),
+              signal: options?.signal,
+            })
+        : undefined,
+    });
+
+    const rawString =
+      typeof rawResponse === 'string'
+        ? rawResponse
+        : (rawResponse as any)?.text || JSON.stringify(rawResponse);
+
+    try {
+      return parseAgentActionProposal(rawString);
+    } catch (parseErr: unknown) {
+      console.warn(
+        '[AIGateway] Initial proposal parsing failed, retrying with error-correction prompt:',
+        parseErr
+      );
+
+      // Attempt 1 Error Correction Retry
+      const errorMsg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      const repair = buildErrorCorrectionPrompt(rawString, errorMsg);
+
+      const repairedRaw = await this.executeWithResilience<string>({
+        taskName: 'proposeNextAction_repair',
+        signal: options?.signal,
+        geminiAction: () =>
+          generateContent({
+            apiKey,
+            prompt: repair.userPrompt,
+            systemInstruction: repair.systemInstruction,
+            config: { temperature: 0.1 },
+            signal: options?.signal,
+          }),
+        groqAction: groqKey
+          ? () =>
+              generateGroqContent({
+                apiKey: groqKey,
+                messages: formatGeminiPromptToGroqMessages(
+                  repair.userPrompt,
+                  repair.systemInstruction
+                ),
+                signal: options?.signal,
+              })
+          : undefined,
+      });
+
+      const repairedString =
+        typeof repairedRaw === 'string'
+          ? repairedRaw
+          : (repairedRaw as any)?.text || JSON.stringify(repairedRaw);
+
+      return parseAgentActionProposal(repairedString);
+    }
   }
 }
 

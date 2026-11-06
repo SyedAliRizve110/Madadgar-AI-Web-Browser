@@ -10,10 +10,12 @@ import {
 } from './extractor';
 import { DOMScanner } from './scanner';
 import { BadgeOverlay } from './overlay';
+import { ActionExecutor } from './executor';
 import type {
   ExtractReadabilityResponse,
   ScanDOMResponse,
   OverlayHighlightMode,
+  AgentActionProposal,
 } from '@/common/types';
 
 /**
@@ -22,7 +24,8 @@ import type {
 export function handleContentScriptMessage(
   message: {
     type?: string;
-    action?: string;
+    action?: string | AgentActionProposal;
+    dryRun?: boolean;
     seconds?: number;
     videoId?: string;
     renderBadges?: boolean;
@@ -153,7 +156,30 @@ export function handleContentScriptMessage(
     return true;
   }
 
-  // 9. Explicit YouTube Transcript Extraction
+  // 9. Safe Synthetic Event Action Execution (Task 3.5)
+  if (messageType === 'EXECUTE_ACTION') {
+    const proposal = (
+      typeof message.action === 'object' ? message.action : message
+    ) as unknown as AgentActionProposal;
+    const dryRun = Boolean(message.dryRun);
+
+    if (!proposal || !proposal.action) {
+      sendResponse({ success: false, error: 'No valid action proposal provided.' });
+      return true;
+    }
+
+    ActionExecutor.execute(proposal, dryRun)
+      .then((result) => {
+        sendResponse(result);
+      })
+      .catch((err: unknown) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        sendResponse({ success: false, error: errorMsg, action: proposal.action });
+      });
+    return true;
+  }
+
+  // 10. Explicit YouTube Transcript Extraction
   if (messageType === 'EXTRACT_YOUTUBE_TRANSCRIPT') {
     extractYouTubeTranscript(document)
       .then((ytResult) => {

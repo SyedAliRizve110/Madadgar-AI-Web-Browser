@@ -346,3 +346,60 @@ export interface AgentActionProposal {
   is_consequential?: boolean;
 }
 
+export interface ExecuteActionMessage {
+  type: 'EXECUTE_ACTION';
+  action: AgentActionProposal;
+  dryRun?: boolean;
+}
+
+export interface ExecuteActionResponse {
+  success: boolean;
+  action: AgentActionType;
+  targetId?: number;
+  value?: string;
+  error?: string;
+  dryRun?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Task 3.6: HITL Agent Orchestrator Finite State Machine (FSM) Types
+// ---------------------------------------------------------------------------
+
+export type AgentFSMStatus =
+  | 'IDLE'
+  | 'SCANNING_DOM'
+  | 'DOM_MAPPED'
+  | 'REASONING_AI'
+  | 'SAFETY_VALIDATION'
+  | 'BLOCKED_SAFETY'
+  | 'AWAITING_APPROVAL'
+  | 'EXECUTING_ACTION'
+  | 'VERIFYING_STATE'
+  | 'SKIPPING_STEP'
+  | 'TASK_COMPLETED'
+  | 'TASK_ABORTED'
+  | 'ERROR';
+
+export interface AgentTaskStepHistory {
+  step: number;
+  action: AgentActionProposal;
+  result?: ExecuteActionResponse;
+  timestamp: number;
+}
+
+export interface AgentTaskSession {
+  taskId: string;
+  goal: string;
+  tabId: number;
+  url?: string;
+  currentStep: number;
+  maxSteps: number;
+  status: AgentFSMStatus;
+  pendingProposal?: AgentActionProposal | null;
+  history: AgentTaskStepHistory[];
+  error?: string | null;
+  dryRun?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+

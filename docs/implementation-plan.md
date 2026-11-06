@@ -296,26 +296,30 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.5: Safe Synthetic Event Action Executor
+### Task 3.5: Safe Synthetic Event Action Executor (Status: COMPLETED)
 - **Deliverables:**
   - Implement `src/content/executor.ts` supporting action types:
     - `click`: Focus element $\rightarrow$ dispatch `mousedown`, `mouseup`, `click`.
-    - `type`: Focus element $\rightarrow$ clear existing value if needed $\rightarrow$ dispatch `input`, `change`, `blur` (updating native value setters for React/Vue inputs).
-    - `select`: Update dropdown value $\rightarrow$ dispatch `change` event.
+    - `type`: Focus element $\rightarrow$ clear existing value if needed $\rightarrow$ dispatch `input`, `change`, `blur` (updating native prototype value setters for React/Vue inputs).
+    - `select`: Update dropdown value by value or text $\rightarrow$ dispatch `input`, `change` event.
     - `scroll`: Scroll element or viewport up/down.
     - `done`: Mark task as successfully achieved.
+    - `fail`: Mark task as failed with plain English reason.
+    - `dry-run`: Highlight element with dashed amber outline without mutating values.
   - Return execution status (`success: boolean, error?: string`) back to the service worker.
 - **Target Files:** `src/content/executor.ts`.
 
 ---
 
-### Task 3.6: HITL Agent Orchestrator Finite State Machine (FSM)
+### Task 3.6: HITL Agent Orchestrator Finite State Machine (FSM) (Status: COMPLETED)
 - **Deliverables:**
   - Implement `src/background/agent_orchestrator.ts` managing the step loop:
     1. Scan page $\rightarrow$ 2. Build action map $\rightarrow$ 3. Request LLM proposal $\rightarrow$ 4. Validate safety $\rightarrow$ 5. Prompt user $\rightarrow$ 6. Wait for approval $\rightarrow$ 7. Execute $\rightarrow$ 8. Verify.
-  - Strict JSON enforcement: Validate LLM output against the schema defined in `architecture.md` (Section 5.2). If malformed, retry with error correction prompt.
+  - Strict JSON enforcement: Validate LLM output against the schema defined in `architecture.md` (Section 5.2). If malformed, retry with error correction prompt (`src/ai/prompts/agent_planner.ts`).
   - Maximum Step Cap: Hard-coded limit (default: 15 steps per task) preventing endless loops.
-- **Target Files:** `src/background/agent_orchestrator.ts`.
+  - Safety Boundary Checks: Prohibit autonomous interaction on financial/banking domains (`paypal`, `bank`, `binance`) and password fields.
+  - Service worker dormancy persistence (`active_task_session` stored in `chrome.storage.local`).
+- **Target Files:** `src/background/agent_orchestrator.ts`, `src/ai/prompts/agent_planner.ts`, `src/background/service_worker.ts`.
 
 ---
 
