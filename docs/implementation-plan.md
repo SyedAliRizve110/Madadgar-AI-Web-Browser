@@ -342,7 +342,7 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.8: MV3 Worker Dormancy Persistence & State Rehydration
+### Task 3.8: MV3 Worker Dormancy Persistence & State Rehydration (Status: COMPLETED)
 - **Deliverables:**
   - In `src/common/storage_adapter.ts`, maintain an `active_task_session` key.
   - Before waiting for user approval or executing an asynchronous LLM request, write the entire serialized FSM state (task ID, step index, history, pending proposal) to `chrome.storage.local`.
@@ -351,25 +351,25 @@ Provide safe, controlled computer-use capabilities by scanning interactive page 
 
 ---
 
-### Task 3.9: Action Audit Log & Practice Errand Validation
+### Task 3.9: Action Audit Log & Practice Errand Validation (Status: COMPLETED)
 - **Deliverables:**
   - Build `AuditLog.tsx` displaying the chronologically ordered list of actions proposed, reasons, and whether the user chose Approved, Skipped, or Stopped.
   - Provide a test fixture / practice environment:
-    - Multi-step form filling practice page.
-    - Practice ecommerce search and filter page.
-  - Verify two complete end-to-end multi-step errands.
+    - Multi-step form filling practice page (`test/fixtures/practice_form.html`).
+    - Practice ecommerce search and filter page (`test/fixtures/practice_shop.html`).
+  - Verify two complete end-to-end multi-step errands with automated test suites (`practice_errands.test.ts`).
 - **Target Files:** `src/sidepanel/components/AuditLog.tsx`, `src/common/types.ts`.
 
 ---
 
 ### Phase 3 Acceptance Criteria & Verification
-- [ ] Numbered badges overlay accurately on visible interactive buttons, links, and inputs.
-- [ ] Natural language element finding ("Where do I...") identifies and highlights the right element.
-- [ ] LLM proposes actions one step at a time in strict structured JSON.
-- [ ] Zero browser actions occur without the user clicking **Approve**.
-- [ ] Dry-run toggle highlights without clicking or typing.
-- [ ] The agent loop survives background worker sleep/wake cycles without losing state.
-- [ ] Complete at least 2 practice errands with approval at every step.
+- [x] Numbered badges overlay accurately on visible interactive buttons, links, and inputs.
+- [x] Natural language element finding ("Where do I...") identifies and highlights the right element.
+- [x] LLM proposes actions one step at a time in strict structured JSON.
+- [x] Zero browser actions occur without the user clicking **Approve**.
+- [x] Dry-run toggle highlights without clicking or typing.
+- [x] The agent loop survives background worker sleep/wake cycles without losing state.
+- [x] Complete at least 2 practice errands with approval at every step.
 
 ---
 
