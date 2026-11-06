@@ -1,0 +1,263 @@
+/**
+ * Shared TypeScript definitions and schemas for Madadgar
+ */
+
+export type SupportedLanguage = 'en' | 'hinglish';
+
+export interface AppSettings {
+  geminiApiKey: string;
+  groqApiKey?: string;
+  defaultLanguage: SupportedLanguage;
+}
+
+export interface UserProfilePersonal {
+  fullName: string;
+  email: string;
+  phone: string;
+  location: string;
+}
+
+export interface UserProfileAcademic {
+  institution: string;
+  degree: string;
+  graduationYear: string;
+  major: string;
+}
+
+export interface UserProfileProfessional {
+  skills: string[];
+  linkedInUrl: string;
+  githubUrl: string;
+  portfolioUrl: string;
+}
+
+export interface UserProfilePreferences {
+  defaultLanguage: SupportedLanguage;
+  tone: 'formal' | 'casual' | 'academic';
+}
+
+export interface UserProfileMemory {
+  personal: UserProfilePersonal;
+  academic: UserProfileAcademic;
+  professional: UserProfileProfessional;
+  preferences: UserProfilePreferences;
+}
+
+export interface SavedSkill {
+  id: string;
+  name: string;
+  description: string;
+  promptTemplate: string;
+  category: 'study' | 'writing' | 'forms' | 'custom';
+  tags: string[];
+  createdAt: number;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: number;
+  taskId: string;
+  stepIndex: number;
+  actionType: 'click' | 'type' | 'select' | 'scroll' | 'done';
+  targetBadgeId?: number;
+  description: string;
+  reasoning: string;
+  userDecision: 'approved' | 'skipped' | 'stopped';
+}
+
+export interface StorageSchema {
+  gemini_api_key?: string;
+  groq_api_key?: string;
+  preferred_language?: SupportedLanguage;
+  settings?: AppSettings;
+  profile_memory?: UserProfileMemory;
+  saved_skills?: SavedSkill[];
+  audit_logs?: AuditLogEntry[];
+  active_task_session?: unknown;
+}
+
+export interface ExtractedArticle {
+  title: string;
+  textContent: string;
+  byline: string | null;
+  length: number;
+  excerpt?: string;
+  siteName?: string | null;
+}
+
+export interface YouTubeTranscriptSegment {
+  text: string;
+  start: number; // In seconds
+  duration: number; // In seconds
+  timestamp: string; // [mm:ss] or [hh:mm:ss]
+}
+
+export interface YouTubeTranscriptResult {
+  videoId: string;
+  title: string;
+  channelTitle?: string;
+  hasTranscript: boolean;
+  transcriptText: string;
+  segments: YouTubeTranscriptSegment[];
+  description?: string;
+  fallbackReason?: string;
+}
+
+export interface ExtractedContentResult extends ExtractedArticle {
+  isYouTube?: boolean;
+  youTubeData?: YouTubeTranscriptResult;
+  selection?: string;
+}
+
+export interface PageContext {
+  tabId: number;
+  title: string;
+  url: string;
+  favIconUrl?: string;
+  selection?: string;
+  textContent: string;
+  byline?: string | null;
+  length: number;
+  isYouTube?: boolean;
+  youTubeData?: YouTubeTranscriptResult;
+  timestamp?: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  isStreaming?: boolean;
+  error?: boolean;
+  contextTitle?: string;
+  contextUrl?: string;
+  imageThumbnail?: string;
+}
+
+
+export type ContextMenuActionId = 'madadgar_explain' | 'madadgar_translate' | 'madadgar_draft';
+
+export interface ContextMenuActionPayload {
+  actionId: ContextMenuActionId;
+  selectedText: string;
+  prompt: string;
+  tabId?: number;
+  tabTitle?: string;
+  tabUrl?: string;
+  timestamp: number;
+}
+
+export type PortMessageType =
+  | 'GET_PAGE_CONTEXT'
+  | 'PAGE_CONTEXT_RESULT'
+  | 'TAB_CHANGED'
+  | 'TAB_UPDATED'
+  | 'SYNC_PAGE_CONTEXT'
+  | 'CONTEXT_MENU_ACTION'
+  | 'CAPTURE_VISIBLE_TAB'
+  | 'STREAM_START'
+  | 'STREAM_CHUNK'
+  | 'STREAM_END'
+  | 'STREAM_ERROR'
+  | 'PING'
+  | 'PONG';
+
+export interface BasePortMessage {
+  type: PortMessageType;
+  requestId?: string;
+}
+
+export interface GetPageContextMessage extends BasePortMessage {
+  type: 'GET_PAGE_CONTEXT';
+  tabId?: number;
+  forceRefresh?: boolean;
+}
+
+export interface PageContextResultMessage extends BasePortMessage {
+  type: 'PAGE_CONTEXT_RESULT';
+  context: PageContext | null;
+  error?: string;
+}
+
+export interface TabChangedMessage extends BasePortMessage {
+  type: 'TAB_CHANGED';
+  tabId: number;
+  windowId: number;
+}
+
+export interface TabUpdatedMessage extends BasePortMessage {
+  type: 'TAB_UPDATED';
+  tabId: number;
+  url?: string;
+  title?: string;
+  status?: string;
+}
+
+export interface StreamChunkMessage extends BasePortMessage {
+  type: 'STREAM_CHUNK';
+  chunk: string;
+  accumulated: string;
+}
+
+export interface ContextMenuActionMessage extends BasePortMessage {
+  type: 'CONTEXT_MENU_ACTION';
+  payload: ContextMenuActionPayload;
+}
+
+export interface CaptureScreenshotMessage extends BasePortMessage {
+  type: 'CAPTURE_VISIBLE_TAB';
+  windowId?: number;
+  quality?: number;
+}
+
+export interface ScreenCaptureResult {
+  success: boolean;
+  dataUrl?: string;
+  error?: string;
+  timestamp: number;
+}
+
+export interface DownscaledImageResult {
+  dataUrl: string;
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+export type PortMessage =
+  | GetPageContextMessage
+  | PageContextResultMessage
+  | TabChangedMessage
+  | TabUpdatedMessage
+  | StreamChunkMessage
+  | ContextMenuActionMessage
+  | CaptureScreenshotMessage
+  | BasePortMessage;
+
+export interface ExtractReadabilityMessage {
+  type: 'EXTRACT_READABILITY_CONTENT';
+}
+
+export interface ExtractYouTubeTranscriptMessage {
+  type: 'EXTRACT_YOUTUBE_TRANSCRIPT';
+  videoId?: string;
+}
+
+export interface SeekYouTubeVideoMessage {
+  type: 'SEEK_YOUTUBE_VIDEO';
+  seconds: number;
+}
+
+export interface GetPageSelectionMessage {
+  type: 'GET_PAGE_SELECTION';
+}
+
+export interface ExtractReadabilityResponse extends ExtractedContentResult {
+  error?: string;
+}
+
+
+
+
