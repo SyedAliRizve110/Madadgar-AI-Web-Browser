@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronUp,
   OctagonX,
+  FileText,
 } from 'lucide-react';
 import type {
   PageContext,
@@ -20,6 +21,7 @@ import type {
   UserProfileMemory,
 } from '@/common/types';
 import { ActionCard } from './ActionCard';
+import { AuditLog } from './AuditLog';
 
 export interface AgentPilotProps {
   context: PageContext | null;
@@ -43,6 +45,7 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
   const [isExecutingStep, setIsExecutingStep] = useState(false);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showAuditLog, setShowAuditLog] = useState<boolean>(false);
 
   const pollIntervalRef = useRef<any>(null);
 
@@ -181,6 +184,15 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
     'Search for this query and sort results by rating',
   ];
 
+  if (showAuditLog) {
+    return (
+      <AuditLog
+        onClose={() => setShowAuditLog(false)}
+        filterTaskId={session?.taskId}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-slate-50 relative select-none">
       {/* 1. Sub-Header: Context & Safety Badge */}
@@ -211,16 +223,27 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
             </div>
           </div>
 
-          {session && (
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
-              onClick={handleResetSession}
-              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100 transition-colors"
-              title="Reset errand"
+              onClick={() => setShowAuditLog(true)}
+              className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+              title="View Action Audit Log (Task 3.9)"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <FileText className="w-3.5 h-3.5" />
             </button>
-          )}
+
+            {session && (
+              <button
+                type="button"
+                onClick={handleResetSession}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Reset errand"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Tab Switch Sync Banner */}
@@ -415,13 +438,23 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
                 Completed across {session.history.length} human-approved steps.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleResetSession}
-              className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-            >
-              Start Another Errand
-            </button>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleResetSession}
+                className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Start Another Errand
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAuditLog(true)}
+                className="py-2 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <span>Audit Log</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -461,13 +494,23 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
                 {session.error || 'The errand was stopped.'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={handleResetSession}
-              className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-            >
-              Reset Pilot
-            </button>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleResetSession}
+                className="py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Reset Pilot
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAuditLog(true)}
+                className="py-2 px-3 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5 text-slate-500" />
+                <span>Audit Log</span>
+              </button>
+            </div>
           </div>
         )}
 

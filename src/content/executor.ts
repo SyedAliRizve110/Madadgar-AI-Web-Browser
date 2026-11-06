@@ -183,7 +183,7 @@ export class ActionExecutor {
       el.dispatchEvent(new MouseEvent('click', opts));
     }
 
-    // For form submit buttons, additionally invoke requestSubmit() on the parent form
+    // For form submit buttons, additionally invoke requestSubmit() or dispatch submit event
     try {
       const form = (el as any).form || el.closest('form');
       const isSubmit =
@@ -191,8 +191,24 @@ export class ActionExecutor {
         el.getAttribute('type') === 'submit' ||
         (el.tagName.toLowerCase() === 'button' && (!el.getAttribute('type') || el.getAttribute('type') === 'submit'));
 
-      if (form && isSubmit && typeof form.requestSubmit === 'function') {
-        form.requestSubmit(el);
+      if (form && isSubmit) {
+        if (typeof form.requestSubmit === 'function') {
+          try {
+            form.requestSubmit(el);
+          } catch {
+            try {
+              HTMLFormElement.prototype.submit.call(form);
+            } catch {
+              form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            }
+          }
+        } else {
+          try {
+            HTMLFormElement.prototype.submit.call(form);
+          } catch {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }
       }
     } catch {
       // Ignored if validation blocks submission or form already submitted

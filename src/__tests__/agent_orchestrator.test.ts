@@ -20,23 +20,26 @@ describe('HITL Agent Orchestrator Finite State Machine (Task 3.6)', () => {
     globalThis.chrome = {
       storage: {
         local: {
-          get: vi.fn((keys: string[]) => {
+          get: vi.fn((keys: string[], callback?: (result: any) => void) => {
             const result: Record<string, any> = {};
             for (const k of keys) {
               if (mockStorage[k] !== undefined) {
                 result[k] = mockStorage[k];
               }
             }
+            if (callback) callback(result);
             return Promise.resolve(result);
           }),
-          set: vi.fn((items: Record<string, any>) => {
+          set: vi.fn((items: Record<string, any>, callback?: () => void) => {
             Object.assign(mockStorage, items);
+            if (callback) callback();
             return Promise.resolve();
           }),
-          remove: vi.fn((keys: string[]) => {
+          remove: vi.fn((keys: string[], callback?: () => void) => {
             for (const k of keys) {
               delete mockStorage[k];
             }
+            if (callback) callback();
             return Promise.resolve();
           }),
         },

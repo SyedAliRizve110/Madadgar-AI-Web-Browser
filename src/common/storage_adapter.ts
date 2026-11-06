@@ -6,7 +6,7 @@
  */
 
 import { STORAGE_KEYS, DEFAULT_LANGUAGE } from './constants';
-import type { AppSettings, StorageSchema, SupportedLanguage } from './types';
+import type { AppSettings, StorageSchema, SupportedLanguage, AgentTaskSession, AuditLogEntry } from './types';
 
 // In-memory fallback for unit testing and non-extension contexts
 const memoryStore = new Map<string, unknown>();
@@ -200,4 +200,69 @@ export async function getPreferredLanguage(): Promise<SupportedLanguage> {
 export async function setPreferredLanguage(lang: SupportedLanguage): Promise<void> {
   const current = await getSettings();
   await saveSettings({ ...current, defaultLanguage: lang });
+}
+
+/**
+ * Task 3.8: Save active agent session state to chrome.storage.local for dormancy survival
+ */
+export async function saveActiveAgentSession(session: AgentTaskSession): Promise<void> {
+  await setStorageItem(STORAGE_KEYS.ACTIVE_TASK_SESSION, session);
+}
+
+/**
+ * Task 3.8: Retrieve active agent session state from chrome.storage.local
+ */
+export async function getActiveAgentSession(): Promise<AgentTaskSession | null> {
+  const session = await getStorageItem(STORAGE_KEYS.ACTIVE_TASK_SESSION);
+  return session || null;
+}
+
+/**
+ * Task 3.8: Clear active agent session state from chrome.storage.local
+ */
+export async function clearActiveAgentSession(): Promise<void> {
+  await removeStorageItem(STORAGE_KEYS.ACTIVE_TASK_SESSION);
+}
+
+/**
+ * Task 3.9: Retrieve all action audit logs from local storage
+ */
+export async function getAuditLogs(): Promise<AuditLogEntry[]> {
+  const logs = await getStorageItem(STORAGE_KEYS.AUDIT_LOGS);
+  return Array.isArray(logs) ? logs : [];
+}
+
+/**
+ * Task 3.9: Append an action audit log entry to chrome.storage.local
+ */
+export async function appendAuditLog(
+  entry: Omit<AuditLogEntry, 'id' | 'timestamp'>
+): Promise<AuditLogEntry> {
+  const fullEntry: AuditLogEntry = {
+    ...entry,
+    id: `audit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: Date.now(),
+  };
+
+  const existingLogs = await getAuditLogs();
+  // Keep up to 200 recent audit logs to prevent excessive local storage consumption
+  const updatedLogs = [fullEntry, ...existingLogs].slice(0, 200);
+  await setStorageItem(STORAGE_KEYS.AUDIT_LOGS, updatedLogs);
+
+  return fullEntry;
+}
+
+/**
+ * Task 3.9: Clear all action audit logs
+ */
+export async function clearAuditLogs(): Promise<void> {
+  await setStorageItem(STORAGE_KEYS.AUDIT_LOGS, []);
+}
+
+/**
+ * Task 3.9: Export all action audit logs as formatted JSON string
+ */
+export async function exportAuditLogsJson(): Promise<string> {
+  const logs = await getAuditLogs();
+  return JSON.stringify(logs, null, 2);
 }

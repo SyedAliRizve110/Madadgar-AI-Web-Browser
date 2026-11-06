@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Madadgar Practice Form - Software Internship Application</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+      padding: 40px 20px;
+      margin: 0;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 32px;
+      border-radius: 16px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-top: 0;
+    }
+    p.subtitle {
+      color: #64748b;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    .form-group {
+      margin-bottom: 18px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      margin-bottom: 6px;
+    }
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #0f172a;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    input:focus, textarea:focus, select:focus {
+      border-color: #4f46e5;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    button[type="submit"] {
+      width: 100%;
+      padding: 12px 20px;
+      background: #4f46e5;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+      transition: background 0.15s ease;
+    }
+    button[type="submit"]:hover {
+      background: #4338ca;
+    }
+    #confirmation-banner {
+      display: none;
+      margin-top: 24px;
+      padding: 16px;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 8px;
+      color: #065f46;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #confirmation-banner.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Software Engineering Internship</h1>
+    <p class="subtitle">Complete the 3-section application form below. Controlled testing environment for Madadgar Pilot.</p>
+
+    <form id="internship-form">
+      <!-- Section 1: Personal Details -->
+      <div class="form-group">
+        <label for="fullName">Full Name</label>
+        <input type="text" id="fullName" name="fullName" placeholder="e.g. Syed Ali Rizvi" required />
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="email">Email Address</label>
+          <input type="email" id="email" name="email" placeholder="e.g. ali@example.com" required />
+        </div>
+        <div class="form-group">
+          <label for="phone">Phone Number</label>
+          <input type="tel" id="phone" name="phone" placeholder="+1 (555) 000-0000" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="location">Current City / Location</label>
+        <input type="text" id="location" name="location" placeholder="e.g. San Francisco, CA" />
+      </div>
+
+      <!-- Section 2: Education -->
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="university">University / Institution</label>
+          <input type="text" id="university" name="university" placeholder="e.g. Stanford University" />
+        </div>
+        <div class="form-group">
+          <label for="degree">Degree & Major</label>
+          <input type="text" id="degree" name="degree" placeholder="B.S. in Computer Science" />
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="gradYear">Graduation Year</label>
+          <select id="gradYear" name="gradYear">
+            <option value="">Select Graduation Year</option>
+            <option value="2025">2025</option>
+            <option value="2026">2026</option>
+            <option value="2027">2027</option>
+            <option value="2028">2028</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="skills">Primary Tech Skills</label>
+          <input type="text" id="skills" name="skills" placeholder="TypeScript, React, Python" />
+        </div>
+      </div>
+
+      <!-- Section 3: Summary -->
+      <div class="form-group">
+        <label for="bio">Short Introduction / Bio</label>
+        <textarea id="bio" name="bio" rows="3" placeholder="Brief statement about your interest in this role..."></textarea>
+      </div>
+
+      <div class="form-group checkbox-group">
+        <input type="checkbox" id="agreeTerms" name="agreeTerms" />
+        <label for="agreeTerms" style="display:inline; margin:0; font-weight: normal; font-size: 13px;">
+          I certify that all details submitted are accurate.
+        </label>
+      </div>
+
+      <button type="submit" id="submit-app-btn">Submit Application</button>
+    </form>
+
+    <div id="confirmation-banner">
+      <strong>🎉 Application Successfully Received!</strong><br />
+      Thank you for applying. Your application has been logged in the system.
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('internship-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      document.getElementById('confirmation-banner').classList.add('active');
+      document.getElementById('submit-app-btn').disabled = true;
+      document.getElementById('submit-app-btn').textContent = 'Submitted!';
+    });
+  </script>
+</body>
+</html>

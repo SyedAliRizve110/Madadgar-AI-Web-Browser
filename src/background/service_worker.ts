@@ -7,6 +7,7 @@ import { MessageBus } from './message_bus';
 import { ContextMenuManager } from './context_menus';
 import { ScreenCaptureManager } from './screen_capture';
 import { AgentOrchestrator } from './agent_orchestrator';
+import { getAuditLogs, clearAuditLogs } from '@/common/storage_adapter';
 
 // Initialize persistent bidirectional message bus & tab tracking
 MessageBus.init();
@@ -119,6 +120,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ success: true, session: rehydrated });
       });
     }
+    return true;
+  }
+
+  // Action Audit Log Handlers (Task 3.9)
+  if (message?.type === 'GET_AUDIT_LOGS') {
+    getAuditLogs()
+      .then((logs) => sendResponse({ success: true, logs }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (message?.type === 'CLEAR_AUDIT_LOGS') {
+    clearAuditLogs()
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => sendResponse({ success: false, error: err.message }));
     return true;
   }
 

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Madadgar Practice Shop - Search & Filter</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 30px 20px;
+      margin: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    header {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .search-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+    }
+    select {
+      padding: 10px 14px;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #ffffff;
+      outline: none;
+    }
+    button.btn-primary {
+      padding: 10px 18px;
+      background: #4f46e5;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    button.btn-primary:hover {
+      background: #4338ca;
+    }
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 18px;
+    }
+    .product-card {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .product-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 6px 0;
+    }
+    .product-category {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #64748b;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+    .product-price {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 12px 0;
+    }
+    .card-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-cart {
+      flex: 1;
+      padding: 8px 12px;
+      background: #10b981;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-cart:hover {
+      background: #059669;
+    }
+    .btn-details {
+      padding: 8px 12px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #cart-status {
+      margin-top: 24px;
+      padding: 14px 18px;
+      background: #ecfdf5;
+      border: 1px solid #6ee7b7;
+      border-radius: 8px;
+      color: #065f46;
+      font-weight: 500;
+      font-size: 14px;
+      display: none;
+    }
+    #cart-status.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <h1 style="margin:0; font-size: 22px;">GadgetMart Online Store</h1>
+          <p style="margin: 4px 0 0 0; color: #64748b; font-size: 13px;">Practice catalog for Madadgar Pilot search and filtering tasks.</p>
+        </div>
+        <div style="font-weight:600; font-size:14px; color:#4f46e5;">
+          Cart: <span id="cart-count">0</span> items
+        </div>
+      </div>
+
+      <div class="search-row">
+        <input type="text" id="search-input" placeholder="Search gadgets (e.g. keyboard, headphones)..." />
+        <select id="category-filter">
+          <option value="all">All Categories</option>
+          <option value="audio">Audio</option>
+          <option value="peripherals">Peripherals</option>
+          <option value="displays">Displays</option>
+        </select>
+        <button type="button" id="search-btn" class="btn-primary">Search</button>
+      </div>
+    </header>
+
+    <div id="cart-status"></div>
+
+    <div class="product-grid" id="product-list">
+      <!-- Product 1 -->
+      <div class="product-card" data-category="audio" data-title="Wireless Noise Cancelling Headphones">
+        <div>
+          <span class="product-category">Audio</span>
+          <h3 class="product-title">Wireless Noise Cancelling Headphones</h3>
+          <p style="font-size: 12px; color: #64748b; margin:0;">Premium over-ear headphones with 30-hour battery life.</p>
+        </div>
+        <div>
+          <div class="product-price">$199.99</div>
+          <div class="card-actions">
+            <button type="button" class="btn-cart" id="add-cart-1">Add to Cart</button>
+            <button type="button" class="btn-details" id="view-details-1">Details</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Product 2 -->
+      <div class="product-card" data-category="peripherals" data-title="Mechanical RGB Gaming Keyboard">
+        <div>
+          <span class="product-category">Peripherals</span>
+          <h3 class="product-title">Mechanical RGB Gaming Keyboard</h3>
+          <p style="font-size: 12px; color: #64748b; margin:0;">Tactile mechanical switches with per-key custom lighting.</p>
+        </div>
+        <div>
+          <div class="product-price">$89.99</div>
+          <div class="card-actions">
+            <button type="button" class="btn-cart" id="add-cart-2">Add to Cart</button>
+            <button type="button" class="btn-details" id="view-details-2">Details</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Product 3 -->
+      <div class="product-card" data-category="displays" data-title="4K Ultra HD IPS Monitor">
+        <div>
+          <span class="product-category">Displays</span>
+          <h3 class="product-title">4K Ultra HD IPS Monitor</h3>
+          <p style="font-size: 12px; color: #64748b; margin:0;">27-inch 4K UHD display with 99% sRGB color accuracy.</p>
+        </div>
+        <div>
+          <div class="product-price">$349.99</div>
+          <div class="card-actions">
+            <button type="button" class="btn-cart" id="add-cart-3">Add to Cart</button>
+            <button type="button" class="btn-details" id="view-details-3">Details</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let cartCount = 0;
+    function addToCart(title) {
+      cartCount++;
+      document.getElementById('cart-count').textContent = cartCount;
+      const status = document.getElementById('cart-status');
+      status.textContent = '🛒 Added "' + title + '" to your cart!';
+      status.classList.add('active');
+    }
+
+    document.querySelectorAll('.btn-cart').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        const card = btn.closest('.product-card');
+        const title = card ? card.getAttribute('data-title') : 'item';
+        addToCart(title);
+      });
+    });
+
+    document.getElementById('search-btn').addEventListener('click', function() {
+      const q = document.getElementById('search-input').value.toLowerCase().trim();
+      const cat = document.getElementById('category-filter').value;
+      const cards = document.querySelectorAll('.product-card');
+
+      cards.forEach(card => {
+        const title = card.getAttribute('data-title').toLowerCase();
+        const category = card.getAttribute('data-category');
+        const matchQ = !q || title.includes(q);
+        const matchCat = cat === 'all' || category === cat;
+
+        card.style.display = (matchQ && matchCat) ? 'flex' : 'none';
+      });
+    });
+  </script>
+</body>
+</html>

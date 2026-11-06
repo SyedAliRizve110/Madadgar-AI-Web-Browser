@@ -5,6 +5,12 @@
  */
 
 import { AIGateway } from '@/ai/ai_gateway';
+import {
+  saveActiveAgentSession,
+  getActiveAgentSession,
+  clearActiveAgentSession,
+  appendAuditLog,
+} from '@/common/storage_adapter';
 import type {
   AgentActionProposal,
   AgentFSMStatus,
@@ -236,6 +242,25 @@ export class AgentOrchestrator {
       };
       session.history.push(stepRecord);
 
+      // Record audit log entry (Task 3.9)
+      try {
+        await appendAuditLog({
+          taskId: session.taskId,
+          stepIndex: stepRecord.step,
+          actionType: proposal.action,
+          targetBadgeId: proposal.target_id ?? undefined,
+          description: this.formatActionDescription(proposal),
+          reasoning: proposal.reason,
+          userDecision: 'approved',
+          url: session.url,
+          value: proposal.value,
+          executionSuccess: execResult?.success ?? true,
+          error: execResult?.error,
+        });
+      } catch (logErr) {
+        console.warn('[AgentOrchestrator] Failed to append audit log for approved step:', logErr);
+      }
+
       session.status = 'VERIFYING_STATE';
       this.notifyListeners();
 
@@ -294,6 +319,25 @@ export class AgentOrchestrator {
     session.currentStep += 1;
     session.pendingProposal = null;
 
+    // Record audit log entry (Task 3.9)
+    try {
+      await appendAuditLog({
+        taskId: session.taskId,
+        stepIndex: session.currentStep - 1,
+        actionType: proposal.action,
+        targetBadgeId: proposal.target_id ?? undefined,
+        description: this.formatActionDescription(proposal),
+        reasoning: proposal.reason,
+        userDecision: 'skipped',
+        url: session.url,
+        value: proposal.value,
+        executionSuccess: true,
+        error: 'Skipped by user.',
+      });
+    } catch (logErr) {
+      console.warn('[AgentOrchestrator] Failed to append audit log for skipped step:', logErr);
+    }
+
     if (session.currentStep > session.maxSteps) {
       session.status = 'TASK_COMPLETED';
       await this.clearBadges(session.tabId);
@@ -316,9 +360,43 @@ export class AgentOrchestrator {
     }
 
     const session = this.activeSession;
+    const proposal = session.pendingProposal;
     session.status = 'TASK_ABORTED';
     session.error = reason;
     session.pendingProposal = null;
+
+    // Record audit log entry (Task 3.9)
+    try {
+      if (proposal) {
+        await appendAuditLog({
+          taskId: session.taskId,
+          stepIndex: session.currentStep,
+          actionType: proposal.action,
+          targetBadgeId: proposal.target_id ?? undefined,
+          description: this.formatActionDescription(proposal),
+          reasoning: proposal.reason,
+          userDecision: 'stopped',
+          url: session.url,
+          value: proposal.value,
+          executionSuccess: false,
+          error: reason,
+        });
+      } else {
+        await appendAuditLog({
+          taskId: session.taskId,
+          stepIndex: session.currentStep,
+          actionType: 'fail',
+          description: 'Task halted by kill switch',
+          reasoning: reason,
+          userDecision: 'stopped',
+          url: session.url,
+          executionSuccess: false,
+          error: reason,
+        });
+      }
+    } catch (logErr) {
+      console.warn('[AgentOrchestrator] Failed to append audit log for stopped task:', logErr);
+    }
 
     await this.clearBadges(session.tabId);
     await this.persistSession();
@@ -328,18 +406,42 @@ export class AgentOrchestrator {
   }
 
   /**
+   * Formats a human-readable description for an agent action proposal
+   */
+  public static formatActionDescription(proposal: AgentActionProposal): string {
+    const target =
+      proposal.target_id !== null && proposal.target_id !== undefined
+        ? ` on #${proposal.target_id}`
+        : '';
+    const val = proposal.value ? ` ("${proposal.value}")` : '';
+    switch (proposal.action) {
+      case 'click':
+        return `Click${target}`;
+      case 'type':
+        return `Type${val}${target}`;
+      case 'select':
+        return `Select option${val}${target}`;
+      case 'scroll':
+        return `Scroll ${proposal.value || 'down'}${target}`;
+      case 'done':
+        return 'Mark errand completed';
+      case 'fail':
+        return 'Conclude task impossible';
+      default:
+        return `${proposal.action}${target}${val}`;
+    }
+  }
+
+  /**
    * Rehydrates the task session from chrome.storage.local (Task 3.8 / Dormancy)
    */
   public static async rehydrate(): Promise<AgentTaskSession | null> {
     try {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        const data = await chrome.storage.local.get([AGENT_TASK_SESSION_STORAGE_KEY]);
-        const session = data[AGENT_TASK_SESSION_STORAGE_KEY] as AgentTaskSession | undefined;
-        if (session) {
-          this.activeSession = session;
-          this.notifyListeners();
-          return session;
-        }
+      const session = await getActiveAgentSession();
+      if (session) {
+        this.activeSession = session;
+        this.notifyListeners();
+        return session;
       }
     } catch (err) {
       console.warn('[AgentOrchestrator] Failed to rehydrate session from storage:', err);
@@ -383,9 +485,12 @@ export class AgentOrchestrator {
     }
     this.activeSession = null;
     this.cachedElements = [];
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      await chrome.storage.local.remove([AGENT_TASK_SESSION_STORAGE_KEY]);
+    try {
+      await clearActiveAgentSession();
+    } catch (err) {
+      console.warn('[AgentOrchestrator] Failed to clear session:', err);
     }
+    this.notifyListeners();
   }
 
   /**
@@ -443,20 +548,16 @@ export class AgentOrchestrator {
   }
 
   /**
-   * Persists active session state to chrome.storage.local
+   * Persists active session state to chrome.storage.local (Task 3.8 / Dormancy)
    */
   private static async persistSession(): Promise<void> {
     if (!this.activeSession) return;
     this.activeSession.updatedAt = Date.now();
 
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-      try {
-        await chrome.storage.local.set({
-          [AGENT_TASK_SESSION_STORAGE_KEY]: this.activeSession,
-        });
-      } catch (err) {
-        console.warn('[AgentOrchestrator] Failed to persist session:', err);
-      }
+    try {
+      await saveActiveAgentSession(this.activeSession);
+    } catch (err) {
+      console.warn('[AgentOrchestrator] Failed to persist session:', err);
     }
   }
 

@@ -58,11 +58,16 @@ export interface AuditLogEntry {
   timestamp: number;
   taskId: string;
   stepIndex: number;
-  actionType: 'click' | 'type' | 'select' | 'scroll' | 'done';
+  actionType: 'click' | 'type' | 'select' | 'scroll' | 'done' | 'fail';
   targetBadgeId?: number;
   description: string;
   reasoning: string;
   userDecision: 'approved' | 'skipped' | 'stopped';
+  url?: string;
+  tabTitle?: string;
+  value?: string;
+  executionSuccess?: boolean;
+  error?: string;
 }
 
 export interface StorageSchema {
@@ -73,7 +78,7 @@ export interface StorageSchema {
   profile_memory?: UserProfileMemory;
   saved_skills?: SavedSkill[];
   audit_logs?: AuditLogEntry[];
-  active_task_session?: unknown;
+  active_task_session?: AgentTaskSession;
 }
 
 export interface ExtractedArticle {
