@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:vercel": "node -e \"const fs = require('fs'); fs.rmSync('dist', {recursive: true, force: true}); fs.cpSync('landing', 'dist', {recursive: true});\"",
     "zip": "npm run build && node scripts/package-zip.js",
     "test": "vitest run",
     "lint": "tsc --noEmit"
