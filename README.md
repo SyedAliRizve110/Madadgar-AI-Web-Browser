@@ -2,6 +2,7 @@
 ### Human-in-the-Loop AI Browser Assistant for Google Chrome (Manifest V3)
 
 [![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-4285F4?logo=google-chrome&logoColor=white)](https://developer.chrome.com/docs/extensions/mv3/)
+[![Live Landing Page](https://img.shields.io/badge/Website-madadgar--ai--web--browser.vercel.app-000?logo=vercel)](https://madadgar-ai-web-browser.vercel.app/)
 [![React 18](https://img.shields.io/badge/React-18.3-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict_Mode-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Bundler-Vite_5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
@@ -43,7 +44,7 @@
 You can load Madadgar either directly from source or using the pre-packaged distribution archive.
 
 ### Option A: Install Pre-Built Release ZIP
-1. Download **`madadgar-v1.0.0.zip`** from the [Releases](https://github.com/SyedAliRizve110/Madadgar-AI-Web-Browser/releases) page or landing site.
+1. Download **`madadgar-v1.0.0.zip`** from the [Landing Site](https://madadgar-ai-web-browser.vercel.app/) ([Direct ZIP Download](https://madadgar-ai-web-browser.vercel.app/madadgar-v1.0.0.zip)) or [GitHub Releases](https://github.com/SyedAliRizve110/Madadgar-AI-Web-Browser/releases).
 2. Extract the ZIP file into a local folder.
 3. Open Google Chrome and enter `chrome://extensions` in the URL bar.
 4. Enable **Developer mode** via the toggle switch in the top-right corner.
@@ -154,7 +155,7 @@ AI prompts alone cannot guarantee security. Madadgar enforces non-negotiable saf
 
 ```
 AI-BROWSER/
-├── landing/                   # GitHub Pages landing site
+├── landing/                   # Marketing landing site (deployed to Vercel)
 │   └── index.html             # Showcase, quickstart guide & direct ZIP link
 ├── scripts/                   # Build & packaging utilities
 │   └── package-zip.js         # Zero-dependency cross-platform ZIP generator

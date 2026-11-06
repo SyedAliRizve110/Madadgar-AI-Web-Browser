@@ -48,3 +48,4 @@ if (!fs.existsSync(path.join(distDir, 'index.html'))) {
 }
 
 console.log('[build-vercel] Vercel build completed successfully.');
+
