@@ -11,25 +11,25 @@ console.log(`[build-vercel] Root directory: ${rootDir}`);
 console.log(`[build-vercel] Process cwd: ${process.cwd()}`);
 
 const landingDir = path.join(rootDir, 'landing');
-const distDir = path.join(rootDir, 'dist');
+const distDir = path.join(rootDir, 'dist-landing');
 
 if (!fs.existsSync(landingDir)) {
   console.error(`[build-vercel] ERROR: landing directory not found at: ${landingDir}`);
   process.exit(1);
 }
 
-// Clean and recreate dist
+// Clean and recreate dist-landing
 if (fs.existsSync(distDir)) {
-  console.log('[build-vercel] Cleaning existing dist directory...');
+  console.log('[build-vercel] Cleaning existing dist-landing directory...');
   fs.rmSync(distDir, { recursive: true, force: true });
 }
 
 fs.mkdirSync(distDir, { recursive: true });
-console.log('[build-vercel] Created fresh dist directory.');
+console.log('[build-vercel] Created fresh dist-landing directory.');
 
-// Copy landing contents to dist
+// Copy landing contents to dist-landing
 fs.cpSync(landingDir, distDir, { recursive: true });
-console.log('[build-vercel] Copied landing/ to dist/.');
+console.log('[build-vercel] Copied landing/ to dist-landing/.');
 
 // Also ensure madadgar-v1.0.0.zip is in dist
 const rootZip = path.join(rootDir, 'madadgar-v1.0.0.zip');
