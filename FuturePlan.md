@@ -3,6 +3,7 @@
 **Document Version:** 1.0  
 **Status:** Proposed Strategy & Architectural Roadmap  
 **Target Architecture:** Multi-Browser, Voice-First, Tiered-Autonomy AI Browser Agent  
+**Technical Architecture Reference:** `FuturePlanArchitecture.md`  
 
 ---
 
@@ -164,3 +165,4 @@ As autonomy increases from **Human-in-the-Loop** to **Supervised Auto-Pilot**, t
 2. **Auditable Voice Logs:** Every voice command and resulting DOM action is logged with an undo / rollback option.
 3. **Hardware Kill Switch:** Pressing `Escape` or clicking the prominent red Stop button immediately kills active speech recognition and running DOM errands.
 4. **Zero Telemetry Guarantee:** Voice audio is processed locally or sent directly to user-configured APIs—never stored on third-party analytical servers.
+
