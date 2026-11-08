@@ -315,7 +315,192 @@ This catalog documents all identified edge cases, categorized across nine archit
 
 ---
 
-## 10. Master Edge-Case Defense Matrix
+## 10. Voice Interaction, Ambient Noise & Microphone Quirks
+
+### 10.1. Microphone Permission Denied or Revoked Mid-Session
+* **Scenario:** The user triggers voice listening via `Alt+V`, but browser microphone permission is blocked, denied, or revoked in browser settings.
+* **Risk:** Uncaught `NotAllowedError` or `PermissionDeniedError` crashes the voice pipeline; the UI remains in a listening spinner indefinitely.
+* **Mitigation:**
+  - Wrap `navigator.mediaDevices.getUserMedia` and `SpeechRecognition.start()` in permission boundary checkers.
+  - Listen to `navigator.permissions.query({ name: 'microphone' })` change events.
+  - If permission is denied, immediately revert the microphone UI state and display a clear prompt with a direct link to browser site settings: *"Microphone access is blocked. Allow microphone access in your browser settings to use voice commands."*
+
+### 10.2. Ambient Background Noise & Inadvertent Voice Triggering
+* **Scenario:** Background music, nearby conversations, or television audio produces phantom speech tokens while the continuous voice listener is active.
+* **Risk:** The agent executes unintended browser actions or navigates away from the active page without the user speaking.
+* **Mitigation:**
+  - Enforce a strict **Confidence Score Threshold**: reject any STT transcription with confidence score $< 0.75$.
+  - Require an explicit intent-trigger prefix (*"Madadgar"*, *"Hey Madadgar"*, or hotkey hold) for all action-triggering directives.
+  - Implement a 5-second silence auto-timeout: if no high-confidence speech is recognized within 5 seconds, turn off the microphone and play a subtle chime.
+
+### 10.3. Regional Dialects, Hinglish Code-Switching & Phonetic Ambiguities
+* **Scenario:** The user speaks in mixed Hindi/English (Hinglish), e.g., *"Is page ko summarize kardo aur bullet points nikalo"*, or has a heavy regional accent that confuses local Web Speech recognition.
+* **Risk:** Local Web Speech produces garbled phonetic words (e.g., *"summarize"* transcribed as *"some arise"*), causing the intent parser to fail.
+* **Mitigation:**
+  - Implement an **Acoustic Phonetic Normalizer**: maintain a dictionary of common code-switched terms (*kardo*, *nikalo*, *dikhana*, *fill karo*).
+  - Dual-Engine Fallback: If local `webkitSpeechRecognition` confidence is $< 0.80$ on Hinglish speech, capture a 4-second audio slice and route to Groq Whisper (`whisper-large-v3`) with language prompt `en,hi`.
+
+### 10.4. Acoustic Feedback Loop (TTS Output Captured by STT Microphone)
+* **Scenario:** Madadgar speaks an audio briefing through the computer speakers while the microphone is listening.
+* **Risk:** The microphone captures Madadgar's own spoken output, transcribing it as a new user command in an infinite feedback loop.
+* **Mitigation:**
+  - Hardware-level mute latch: When `window.speechSynthesis.speaking === true`, automatically pause and mute the `SpeechRecognition` listener.
+  - Add a 400ms acoustic dampening grace period after `speechSynthesis.onend` fires before unmuting the microphone.
+
+### 10.5. Network Disconnection during Cloud Whisper Fallback
+* **Scenario:** The user relies on Whisper cloud audio transcription, and internet connectivity drops mid-speech.
+* **Risk:** In-flight fetch hanging or throwing network errors with no user feedback.
+* **Mitigation:**
+  - Set a 4,000ms hard abort controller on Whisper REST calls.
+  - If a network error occurs, seamlessly fall back to local `webkitSpeechRecognition` and notify the user: *"Cloud speech unreachable. Using on-device speech recognizer."*
+
+---
+
+## 11. Autonomous Execution & Auto-Pilot Errand Quirks
+
+### 11.1. Infinite Cyclic Navigation Loops in Auto-Pilot Mode
+* **Scenario:** An autonomous errand encounters an e-commerce pagination link that loops back to the first page, or an action triggers a page reload that resets form state.
+* **Risk:** The autonomous agent gets trapped in an infinite click-and-wait loop, consuming API quotas and draining system memory.
+* **Mitigation:**
+  - Maintain a **Visited State Ring Buffer**: hash the combination of `(URL + targetSelector + actionType)`.
+  - Stagnation Detector: If the same state is visited $\ge 3$ times within a 60-second window, halt the autonomous loop immediately, revert to `AWAITING_APPROVAL`, and inform the user.
+
+### 11.2. Polymorphic & Deceptive Consequential Buttons
+* **Scenario:** A website disguises a payment or reservation button using non-standard wording like *"Lock in this deal"*, *"Secure your spot"*, *"Complete my trip"*, or icon-only buttons without text labels.
+* **Risk:** Standard keyword matching for `Submit`, `Pay`, `Order` misses the consequential nature of the button, allowing autonomous execution of a financial commitment.
+* **Mitigation:**
+  - Multi-Signal Consequential Classifier:
+    1. Check `button.innerText`, `button.ariaLabel`, `button.title`, and `button.id`.
+    2. Check ancestor forms: if `<form action="...">` contains `checkout`, `cart`, `billing`, or `payment`, escalate risk score to `1.0`.
+    3. Check adjacent elements for currency symbols (`$`, `₹`, `€`, `£`) or total price indicators within 200px.
+    4. If any signal matches, treat as **High-Risk Consequential** and force an explicit double-confirmation modal.
+
+### 11.3. Asynchronous Dynamic Modals & Cookie Banner Popups Mid-Errand
+* **Scenario:** During an autonomous multi-step errand, a newsletter signup modal or cookie consent banner pops up unexpectedly, covering the target button with a backdrop overlay.
+* **Risk:** Synthetic clicks fire on the backdrop rather than the target element, or throw `ElementClickInterceptedException`.
+* **Mitigation:**
+  - Before dispatching any click in the autonomous loop, verify `document.elementFromPoint(x, y) === targetElement` (or contains it).
+  - If a covering modal backdrop is detected, temporarily pause the autonomous loop, attempt to dismiss standard cookie banners via standard selectors (`#onetrust-accept-btn-handler`, `.cookie-agree`), or notify the user to dismiss the overlay.
+
+### 11.4. Bot Detection, CAPTCHA, Cloudflare Turnstile, and Proof-of-Work Gates
+* **Scenario:** The target website triggers a CAPTCHA, Cloudflare Turnstile verification, or "Verify you are human" challenge during autonomous navigation.
+* **Risk:** Agent attempts to inspect or click the CAPTCHA frame, causing anti-bot lockouts or violating guidelines.
+* **Mitigation:**
+  - Deterministic challenge detector: inspect page for known challenge signatures (`iframe[src*="recaptcha"]`, `iframe[src*="turnstile"]`, `iframe[src*="hcaptcha"]`, `div#challenge-running`).
+  - **Hard Invariant:** The agent immediately halts autonomous execution, displays a prominent notification: *"Human verification detected. Please complete the verification in the active tab to continue"*, and waits for the user to solve it before resuming.
+
+### 11.5. Stale Element Clicks during Rapid Autonomous Dispatches
+* **Scenario:** In high-speed Auto-Pilot mode, the agent dispatches Action 2 while the DOM is still mutating from Action 1.
+* **Risk:** Target element for Action 2 is stale or in transit, causing clicks to misfire.
+* **Mitigation:**
+  - Dynamic Mutation Quiescence Gate: After dispatching an action, wait for either:
+    1. A DOM mutation observer settling period (no mutations for 250ms), OR
+    2. A network idle signal (no pending fetch/XHR for 300ms).
+  - Maximum timeout ceiling of 2,000ms ensures the agent never freezes permanently on continuous polling websites.
+
+---
+
+## 12. Cross-Browser Engine Quirks (Firefox Gecko vs Chromium)
+
+### 12.1. Firefox `sidebar_action` vs Chrome `side_panel` Window Scoping
+* **Scenario:** In Chrome, `chrome.sidePanel.open({ windowId })` opens a panel per window. In Firefox, `browser.sidebarAction.open()` operates globally across all windows or has distinct window scoping.
+* **Risk:** Side panel state desynchronizes when a user switches between multiple browser windows in Firefox.
+* **Mitigation:**
+  - In `UniversalSidebarAdapter`, query `browser.windows.getCurrent()` and scope tab context listeners dynamically.
+  - In Firefox, synchronize active tab tracking using `browser.tabs.onActivated` listeners registered inside the sidebar script itself to guarantee context matches the focused window.
+
+### 12.2. Event Page Dormancy vs Chromium MV3 Service Worker Lifecycles
+* **Scenario:** Firefox Manifest V3 uses event pages (background scripts) rather than pure Chromium service workers. The suspension rules and API availability (`self` vs `window`) differ.
+* **Risk:** Background script throws `ReferenceError: self is not defined` or fails to wake up on incoming sidebar ports.
+* **Mitigation:**
+  - Use `globalThis` instead of `self` or `window` for all background singleton controllers.
+  - Implement dual initialization in `service_worker.ts`: support both Chromium `onStartup` / `onInstalled` events and Firefox `browser.runtime.onConnect` persistent port hooks.
+
+### 12.3. `browser.*` vs `chrome.*` Promise / Callback Discrepancies
+* **Scenario:** Native `chrome.*` APIs historically use callbacks, while Firefox `browser.*` returns native Promises.
+* **Risk:** Chained `.then()` calls crash with `TypeError: Cannot read properties of undefined (reading 'then')` on Chromium if polyfill fails to mount.
+* **Mitigation:**
+  - Build all extension internals exclusively against Mozilla's `webextension-polyfill` (`import browser from 'webextension-polyfill'`).
+  - Standardize all asynchronous browser calls to native ES `async/await` syntax.
+
+### 12.4. Content Security Policy (CSP) Restrictions on Inline Scripts in Firefox MV3
+* **Scenario:** Firefox MV3 enforces stricter CSP rules against dynamic script evaluation and inline style tags than Chrome.
+* **Risk:** Content script overlays (e.g., Shadow DOM badges) fail to inject stylesheets if inline styles are blocked.
+* **Mitigation:**
+  - In content scripts, inject styles exclusively via `CSSStyleSheet.replaceSync()` or link to packaged CSS files via `browser.runtime.getURL('assets/overlay.css')`.
+  - Zero use of `eval()` or `new Function()` anywhere in the codebase.
+
+---
+
+## 13. Universal Content Composer & `contenteditable` Virtual DOM Quirks
+
+### 13.1. Framework-Controlled Virtual Cursor / Lexical / Draft.js / ProseMirror Desync
+* **Scenario:** The agent attempts to inject an email draft into Gmail (which uses a custom DOM editor) or LinkedIn (ProseMirror / Draft.js). Setting `element.innerText = text` destroys the editor's internal state machine, causing typed characters to disappear on the next keystroke.
+* **Risk:** The generated draft vanishes or is rejected upon hitting "Send".
+* **Mitigation:**
+  - Never mutate `innerHTML` or `innerText` directly on rich-text editors.
+  - Use the native Selection and Range APIs to place the caret:
+    ```typescript
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editorElement);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    ```
+  - Dispatch a synthetic `beforeinput` event with `inputType: 'insertText'`, followed by `document.execCommand('insertText', false, text)`. This triggers the host editor's internal state synchronization.
+
+### 13.2. Formatting Bleed & Style Pollution in Rich Draft Composers
+* **Scenario:** Injecting multiline text or markdown with bold/bullet formatting introduces foreign HTML tags (`<font>`, `<span>`) that corrupt the user's default email font or formatting.
+* **Risk:** The recipient receives an email with mismatched fonts or broken styling.
+* **Mitigation:**
+  - Strip all foreign CSS classes and inline style tags before insertion.
+  - Convert markdown into clean, canonical semantic HTML (`<p>`, `<strong>`, `<em>`, `<ul>`, `<li>`) without hardcoded fonts, allowing the host composer to apply its native styling cleanly.
+
+### 13.3. Inline Ghostwriter Tab-to-Accept Colliding with Native Form Tab Navigation
+* **Scenario:** The user is typing in a form input. An inline ghostwriting pill appears offering autocomplete text. The user presses `Tab` to navigate to the next field, but accidentally accepts the autocomplete text instead (or vice versa).
+* **Risk:** Frustration due to hijacked keyboard navigation.
+* **Mitigation:**
+  - Configurable Ghostwriter hotkey: offer `Tab` or `Ctrl+Enter` / `Cmd+Enter` as the acceptance key.
+  - If the user presses `Tab` while a suggestion is visible, accept the suggestion and immediately shift focus to the next logical input, preserving expected keyboard workflow.
+  - Pressing `Escape` instantly clears the suggestion without moving focus.
+
+---
+
+## 14. Multi-Tab Orchestration & Edge AI Hardware Quirks
+
+### 14.1. Background Tab CPU Throttling by Browser Resource Freezing
+* **Scenario:** In a multi-tab comparison errand, Madadgar spawns 3 background tabs to extract pricing. Chrome or Edge aggressively throttles JavaScript timers and background execution in inactive tabs.
+* **Risk:** Extraction scripts in background tabs stall or take minutes to report results.
+* **Mitigation:**
+  - Sequential Focus Swapping: Rather than keeping tabs hidden, activate each tab in rapid succession (e.g. 500ms active window) to complete DOM extraction before moving to the next tab.
+  - Alternatively, use `chrome.scripting.executeScript` directly from the background service worker, which bypasses background tab timer throttling.
+
+### 14.2. Tab Closure by User Mid-Errand
+* **Scenario:** While Madadgar executes a multi-tab research errand, the user manually closes Tab 2.
+* **Risk:** Subsequent `tabs.sendMessage` calls throw `Error: No tab with id: X`, causing the parent errand orchestrator to crash or hang.
+* **Mitigation:**
+  - Register `chrome.tabs.onRemoved` listener inside `TabCoordinator`.
+  - If a tracked tab is closed, mark that subtask as `ABORTED_BY_USER`, recalculate remaining dependencies, and gracefully continue the errand with available tab data.
+
+### 14.3. Device GPU Exhaustion or Out-of-Memory during WebGPU / Gemini Nano Inference
+* **Scenario:** The user runs local on-device inference via WebGPU or Chrome's `window.ai` on a low-spec laptop (e.g. 8GB RAM, integrated graphics). The model exhausts VRAM, causing the browser tab to crash (`Aw, Snap!`).
+* **Risk:** Extension crash and loss of active tab session.
+* **Mitigation:**
+  - Pre-flight Hardware Inspection: Query `navigator.hardwareConcurrency` and `navigator.deviceMemory`.
+  - If `deviceMemory < 8` or `window.ai` initialization exceeds 3,000ms, automatically bypass local inference and use the cloud gateway (Gemini 2.5 Flash-Lite).
+  - Wrap all local model calls in timeout and memory guards with automatic fallback to cloud API.
+
+### 14.4. IndexedDB Storage Eviction under Low Disk Space
+* **Scenario:** The user’s hard drive runs low on storage space. The browser's storage manager automatically purges IndexedDB databases to reclaim space.
+* **Risk:** Local semantic browsing history embeddings and custom skills are silently deleted.
+* **Mitigation:**
+  - Request persistent storage permission: `navigator.storage.persist()`.
+  - Maintain critical user configurations (API keys, user profile, skill prompt templates) in `chrome.storage.local`, which is protected from automatic browser cache eviction, reserving IndexedDB solely for reconstructible semantic vector indices.
+
+---
+
+## 15. Master Edge-Case Defense Matrix (v1.0 & v2.0 Combined)
 
 | Category | Specific Edge Scenario | Detection Mechanism | Deterministic Defense / Fallback |
 | :--- | :--- | :--- | :--- |
@@ -332,5 +517,15 @@ This catalog documents all identified edge cases, categorized across nine archit
 | **Security** | Banking / UPI payment domain | Hostname matching against blacklist | Instant shutdown: clear badges, kill active errand, display safety notice. |
 | **Security** | Sensitive inputs (passwords, PINs, OTPs) | Element type and attribute regex scan | Strict code block: content script executor refuses to type or read sensitive fields. |
 | **Security** | Irreversible actions (`Submit`, `Pay`, `Delete`) | Button label and role classifier | Mandatory secondary confirmation modal in Side Panel before execution. |
-| **HITL** | Emergency user intervention needed | Red Kill Switch click | Instant hard reset: terminates LLM calls, clears badges, resets state to `IDLE`. |
+| **HITL** | Emergency user intervention needed | Red Kill Switch click / `Escape` key | Instant hard reset: terminates LLM calls, clears badges, resets state to `IDLE`. |
+| **Voice** | Microphone permission revoked mid-session | `NotAllowedError` catch block | Clean UI state reset + guidance banner with browser permission link. |
+| **Voice** | Ambient noise produces phantom speech | Confidence score $< 0.75$ | Reject transcription; require wake word / hotkey; auto-timeout after 5s silence. |
+| **Voice** | Acoustic feedback loop (TTS output heard by mic) | `speechSynthesis.speaking === true` | Hardware-level mute latch on STT listener + 400ms post-speech grace period. |
+| **Autonomy** | Deceptive / disguised consequential button | Semantic text + Form context + Currency scan | Multi-signal classifier treats as High-Risk; mandates explicit user confirmation. |
+| **Autonomy** | Bot verification / CAPTCHA encountered | Frame and script signature detector | Hard Invariant: halt auto-pilot immediately; prompt human to complete verification. |
+| **Cross-Browser** | Firefox `sidebar_action` vs Chrome `sidePanel` | Feature detection on runtime objects | `UniversalSidebarAdapter` maps calls to active browser's native sidebar API. |
+| **Rich Text** | Virtual DOM cursor desync in Gmail/LinkedIn | `target.isContentEditable === true` | Caret positioning via Selection/Range APIs + synthetic `beforeinput` & `execCommand`. |
+| **Multi-Tab** | Tracked background tab closed by user | `tabs.onRemoved` event listener | Mark subtask aborted; recalculate dependencies and proceed with remaining tabs. |
+| **Edge AI** | GPU Out-of-Memory during local model execution | Hardware memory check + timeout guard | Transparent failover to cloud Gemini 2.5 Flash-Lite API without crashing tab. |
+
 
