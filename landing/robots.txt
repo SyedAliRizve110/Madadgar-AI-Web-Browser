@@ -2,3 +2,4 @@ User-agent: *
 Allow: /
 
 Sitemap: https://madadgar-ai-web-browser.vercel.app/sitemap.xml
+
