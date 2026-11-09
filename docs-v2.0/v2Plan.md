@@ -1,9 +1,9 @@
-# 🚀 Madadgar: Proposed Future Roadmap & Evolution Plan (`FuturePlan.md`)
+# 🚀 Madadgar: Proposed v2.0 Roadmap & Evolution Plan (`v2Plan.md`)
 
 **Document Version:** 1.0  
 **Status:** Proposed Strategy & Architectural Roadmap  
 **Target Architecture:** Multi-Browser, Voice-First, Tiered-Autonomy AI Browser Agent  
-**Technical Architecture Reference:** `FuturePlanArchitecture.md`  
+**Technical Architecture Reference:** `v2Architecture.md`  
 
 ---
 
@@ -139,7 +139,7 @@ Beyond the initial suggestions, the following enhancements would elevate Madadga
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
-│                       MADADGAR FUTURE ROADMAP                              │
+│                         MADADGAR v2.0 ROADMAP                              │
 ├────────────────────────┬─────────────────────────┬─────────────────────────┤
 │ Phase 5 (Next 3 Weeks) │ Phase 6 (Weeks 4-6)     │ Phase 7 (Weeks 7-9)     │
 │ Voice & Multi-Browser  │ Autonomous Pilot & Text │ Local AI & Multi-Tab    │

@@ -1,6 +1,6 @@
-# Madadgar System Architecture: Future Plan & Evolution
-**Document Reference:** `FuturePlanArchitecture.md`  
-**Parent Roadmap:** `FuturePlan.md`  
+# Madadgar System Architecture: v2.0 Evolution
+**Document Reference:** `v2Architecture.md`  
+**Parent Roadmap:** `v2Plan.md`  
 **Current Baseline:** Madadgar v1.0 (Manifest V3, Chrome Side Panel, HITL FSM)  
 **Target Architecture Version:** 2.0  
 **Target Environments:** Google Chrome, Microsoft Edge, Brave, Opera, Mozilla Firefox  

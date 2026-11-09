@@ -1,9 +1,9 @@
-# Madadgar: Phase-Wise Future Implementation Plan (`FutureImplementationPlan.md`)
+# Madadgar: Phase-Wise v2.0 Implementation Plan (`v2ImplementationPlan.md`)
 
 **Document Version:** 1.0  
 **Status:** Approved for Implementation  
-**Architecture Reference:** `FuturePlanArchitecture.md`  
-**Parent Roadmap:** `FuturePlan.md`  
+**Architecture Reference:** `v2Architecture.md`  
+**Parent Roadmap:** `v2Plan.md`  
 **Master Edge-Case Reference:** `../docs/edge-cases.md`  
 **Execution Strategy:** Incremental Vertical Slices with Strict Backward Compatibility  
 **Target Completion:** 9 Weeks (Phases 5, 6, 7)  
@@ -325,7 +325,7 @@ Enable cross-tab parallel errand coordination, integrate on-device zero-API-key 
 
 ## 7. Definition of Done (Master Project Sign-Off)
 
-The Future Plan is considered fully realized when:
+The v2.0 Plan is considered fully realized when:
 1. **Cross-Browser:** The extension installs and functions identically on Chrome, Edge, Brave, Opera, and Firefox.
 2. **Hands-Free Voice:** A user can speak natural commands to navigate, click, scroll, and summarize without touch or keyboard.
 3. **Safe Auto-Pilot:** Multi-step routine errands run autonomously, while financial, credential, and delete actions are deterministically blocked from unauthorized execution.
