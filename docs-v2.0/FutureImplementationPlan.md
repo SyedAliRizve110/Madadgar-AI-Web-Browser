@@ -4,7 +4,7 @@
 **Status:** Approved for Implementation  
 **Architecture Reference:** `FuturePlanArchitecture.md`  
 **Parent Roadmap:** `FuturePlan.md`  
-**Master Edge-Case Reference:** `docs/edge-cases.md`  
+**Master Edge-Case Reference:** `../docs/edge-cases.md`  
 **Execution Strategy:** Incremental Vertical Slices with Strict Backward Compatibility  
 **Target Completion:** 9 Weeks (Phases 5, 6, 7)  
 
@@ -333,3 +333,4 @@ The Future Plan is considered fully realized when:
 5. **Zero-Key Local AI:** First-time users can summarize articles offline via Chrome's built-in Gemini Nano without entering an API key.
 6. **Multi-Tab Intelligence:** Cross-tab comparison errands autonomously gather, synthesize, and display comparative findings.
 7. **Semantic Memory:** Users can query past research journeys using natural conversational language.
+
