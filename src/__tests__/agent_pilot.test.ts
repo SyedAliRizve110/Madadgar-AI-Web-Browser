@@ -66,4 +66,18 @@ describe('AgentPilot Component (Task 3.7)', () => {
     expect(html).toContain('Switched tabs. Pilot is tracking previous page.');
     expect(html).toContain('Sync Tab');
   });
+
+  it('removes Start Pilot Errand button in auto-pilot mode and renders Auto-Pilot Listening indicator', () => {
+    const html = renderToString(
+      React.createElement(AgentPilot, {
+        context: mockContext,
+        initialAutonomyMode: 'auto-pilot',
+      })
+    );
+
+    // Manual start button should not be present in auto-pilot mode
+    expect(html).not.toContain('Start Pilot Errand');
+    expect(html).toContain('Auto-Pilot Listening');
+    expect(html).toContain('Alt+V');
+  });
 });

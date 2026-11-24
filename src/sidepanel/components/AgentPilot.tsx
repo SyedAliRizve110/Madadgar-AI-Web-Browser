@@ -15,6 +15,7 @@ import {
   OctagonX,
   FileText,
   Undo2,
+  Zap,
 } from 'lucide-react';
 import type {
   PageContext,
@@ -34,6 +35,7 @@ export interface AgentPilotProps {
   onConfigureApiKey?: () => void;
   initialGoal?: string;
   onInitialGoalHandled?: () => void;
+  initialAutonomyMode?: AutonomyMode;
 }
 
 export const AgentPilot: React.FC<AgentPilotProps> = ({
@@ -43,12 +45,13 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
   onSyncContext,
   initialGoal,
   onInitialGoalHandled,
+  initialAutonomyMode,
 }) => {
   const [session, setSession] = useState<AgentTaskSession | null>(null);
   const [goalInput, setGoalInput] = useState('');
   const [maxSteps, setMaxSteps] = useState(15);
   const [dryRun, setDryRun] = useState(false);
-  const [autonomyMode, setAutonomyMode] = useState<AutonomyMode>('co-pilot');
+  const [autonomyMode, setAutonomyMode] = useState<AutonomyMode>(initialAutonomyMode || 'co-pilot');
   const [isLoading, setIsLoading] = useState(false);
   const [isExecutingStep, setIsExecutingStep] = useState(false);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
@@ -106,8 +109,12 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
     if (initialGoal) {
       setGoalInput(initialGoal);
       onInitialGoalHandled?.();
+      // In auto-pilot mode, start errand automatically after voice directive without requiring manual button click
+      if (autonomyMode === 'auto-pilot') {
+        handleStartTask(initialGoal);
+      }
     }
-  }, [initialGoal]);
+  }, [initialGoal, autonomyMode]);
 
   // 2. Start new task errand
   const handleStartTask = async (customGoal?: string) => {
@@ -344,7 +351,19 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
               <textarea
                 value={goalInput}
                 onChange={(e) => setGoalInput(e.target.value)}
-                placeholder="e.g., Fill the job application form with my contact details, then continue to the next step"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (goalInput.trim()) {
+                      handleStartTask();
+                    }
+                  }
+                }}
+                placeholder={
+                  autonomyMode === 'auto-pilot'
+                    ? "Speak goal (Alt+V) or type and press Enter to auto-run..."
+                    : "e.g., Fill the job application form with my contact details, then continue to the next step"
+                }
                 rows={3}
                 className="w-full text-xs p-3 rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all resize-none select-text"
               />
@@ -386,25 +405,62 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
                 disabled={isLoading}
               />
 
-              {/* Start Button */}
-              <button
-                type="button"
-                onClick={() => handleStartTask()}
-                disabled={isLoading || !goalInput.trim()}
-                className="w-full mt-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isLoading ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Initializing Errand...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-white" />
-                    <span>Start Pilot Errand</span>
-                  </>
-                )}
-              </button>
+              {/* Start Control: In Auto-Pilot mode, manual start button is removed and starts automatically via voice */}
+              {autonomyMode === 'auto-pilot' ? (
+                <div className="mt-2 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[11px] leading-tight flex items-center gap-1 text-amber-900">
+                        <Zap className="w-3 h-3 text-amber-600 fill-amber-600" />
+                        <span>Auto-Pilot Listening</span>
+                      </p>
+                      <p className="text-[10px] text-amber-700/90 truncate mt-0.5">
+                        Speak goal (<kbd className="font-mono bg-white/70 px-1 py-0.2 rounded border border-amber-200 text-[9px]">Alt+V</kbd>) or press Enter to auto-run
+                      </p>
+                    </div>
+                  </div>
+                  {isLoading ? (
+                    <div className="flex items-center gap-1.5 text-amber-700 text-[11px] font-semibold shrink-0">
+                      <span className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin" />
+                      <span>Running...</span>
+                    </div>
+                  ) : goalInput.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => handleStartTask()}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold rounded-lg shrink-0 transition-colors cursor-pointer shadow-2xs flex items-center gap-1"
+                      title="Run immediately"
+                    >
+                      <Zap className="w-3 h-3" />
+                      <span>Start</span>
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                /* Co-Pilot Manual HITL Mode: Displays standard manual Start Pilot Errand button */
+                <button
+                  type="button"
+                  onClick={() => handleStartTask()}
+                  disabled={isLoading || !goalInput.trim()}
+                  className="w-full mt-2 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  {isLoading ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Initializing Errand...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-white" />
+                      <span>Start Pilot Errand</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Quick Starter Suggestions */}

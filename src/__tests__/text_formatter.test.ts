@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { cleanLaTeXMath, isMathExpression } from '../common/text_formatter';
+import { cleanLaTeXMath, isMathExpression, renderInlineMarkdown } from '../common/text_formatter';
+import React from 'react';
+import ReactDOMServer from 'react-dom/server';
 
 describe('Text Formatter & Math Delimiter Cleaner', () => {
   it('cleans LaTeX math tokens from Big-O complexity expressions', () => {
@@ -27,5 +29,15 @@ describe('Text Formatter & Math Delimiter Cleaner', () => {
     expect(cleanLaTeXMath('\\alpha + \\beta = \\theta')).toBe('α + β = θ');
     expect(cleanLaTeXMath('\\frac{a}{b}')).toBe('(a / b)');
     expect(cleanLaTeXMath('\\sqrt{n}')).toBe('√(n)');
+  });
+
+  it('renders inline markdown containing $O(...) and $O(1)$ properly', () => {
+    const text = 'with a time complexity of $O(n \\times (\\max(arr) - \\min(arr)))$ and auxiliary space of $O(1)$.';
+    const rendered = renderInlineMarkdown(text);
+    const html = ReactDOMServer.renderToStaticMarkup(React.createElement('div', null, rendered));
+    console.log('RENDERED HTML:', html);
+    expect(html).not.toContain('$');
+    expect(html).toContain('O(n × (max(arr) - min(arr)))');
+    expect(html).toContain('O(1)');
   });
 });

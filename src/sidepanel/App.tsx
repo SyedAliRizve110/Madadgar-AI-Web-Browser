@@ -313,8 +313,16 @@ export const App: React.FC = () => {
           setLiveVoiceTranscript('Summarizing page...');
         }
         handleSummarizeRef.current?.(targetLang);
-      } else if (activeTab === 'agent') {
-        setAgentInitialGoal(intent.cleanedText || text);
+      } else if (
+        activeTab === 'agent' ||
+        /^(?:pilot|agent|errand|auto[\s-]pilot)\b/i.test(intent.cleanedText || text)
+      ) {
+        const cleanGoal = (intent.cleanedText || text)
+          .replace(/^(?:pilot|agent|errand|auto[\s-]pilot)[,:\s]*/i, '')
+          .trim();
+        setActiveTab('agent');
+        setAgentInitialGoal(cleanGoal || intent.cleanedText || text);
+        setLiveVoiceTranscript(`Starting pilot errand: "${cleanGoal || text}"`);
       } else {
         setSkillPendingAction({
           actionId: 'voice',
