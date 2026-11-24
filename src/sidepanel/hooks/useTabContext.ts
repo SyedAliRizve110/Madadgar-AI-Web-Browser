@@ -5,13 +5,16 @@ import type {
   PageContextResultMessage,
   TabChangedMessage,
   TabUpdatedMessage,
+  WindowFocusChangedMessage,
   ContextMenuActionPayload,
   ContextMenuActionMessage,
 } from '@/common/types';
 import { PORT_NAME } from '@/background/message_bus';
+import { connectUniversalPort } from '@/common/browser_adapter';
 
 export interface UseTabContextOptions {
   autoSyncOnTabChange?: boolean;
+  onVoiceToggle?: () => void;
 }
 
 export interface UseTabContextReturn {
@@ -23,6 +26,7 @@ export interface UseTabContextReturn {
   error: string | null;
   isPortConnected: boolean;
   pendingAction: ContextMenuActionPayload | null;
+  voiceToggleTrigger: number;
   clearPendingAction: () => void;
   syncWithActiveTab: (forceRefresh?: boolean) => Promise<PageContext | null>;
   dismissTabChangeNotification: () => void;
@@ -34,7 +38,7 @@ export interface UseTabContextReturn {
  * with the active tab context via persistent chrome.runtime.Port.
  */
 export function useTabContext(options: UseTabContextOptions = {}): UseTabContextReturn {
-  const { autoSyncOnTabChange = false } = options;
+  const { autoSyncOnTabChange = false, onVoiceToggle } = options;
 
   const [context, setContext] = useState<PageContext | null>(null);
   const [activeTabId, setActiveTabId] = useState<number | null>(null);
@@ -44,6 +48,7 @@ export function useTabContext(options: UseTabContextOptions = {}): UseTabContext
   const [error, setError] = useState<string | null>(null);
   const [isPortConnected, setIsPortConnected] = useState<boolean>(false);
   const [pendingAction, setPendingAction] = useState<ContextMenuActionPayload | null>(null);
+  const [voiceToggleTrigger, setVoiceToggleTrigger] = useState<number>(0);
 
   const clearPendingAction = useCallback(() => {
     setPendingAction(null);
@@ -106,11 +111,34 @@ export function useTabContext(options: UseTabContextOptions = {}): UseTabContext
         break;
       }
 
+      case 'WINDOW_FOCUS_CHANGED': {
+        const focusMsg = msg as WindowFocusChangedMessage;
+        // Window focus switched across windows (Task 5.2): track new active tab without state dropping
+        if (typeof focusMsg.tabId === 'number' && focusMsg.tabId !== activeTabIdRef.current) {
+          setLatestTabId(focusMsg.tabId);
+          setHasTabChanged(true);
+          if (autoSyncOnTabChange) {
+            portRef.current?.postMessage({
+              type: 'GET_PAGE_CONTEXT',
+              tabId: focusMsg.tabId,
+              forceRefresh: true,
+            });
+          }
+        }
+        break;
+      }
+
       case 'CONTEXT_MENU_ACTION': {
         const contextMenuMsg = msg as ContextMenuActionMessage;
         if (contextMenuMsg.payload) {
           setPendingAction(contextMenuMsg.payload);
         }
+        break;
+      }
+
+      case 'TOGGLE_VOICE_INPUT': {
+        setVoiceToggleTrigger((prev) => prev + 1);
+        onVoiceToggle?.();
         break;
       }
 
@@ -120,13 +148,13 @@ export function useTabContext(options: UseTabContextOptions = {}): UseTabContext
   }, [autoSyncOnTabChange]);
 
   const connectPort = useCallback(() => {
-    if (typeof chrome === 'undefined' || !chrome.runtime?.connect) {
-      setIsLoading(false);
-      return null;
-    }
-
     try {
-      const port = chrome.runtime.connect({ name: PORT_NAME });
+      const port = connectUniversalPort(PORT_NAME);
+      if (!port) {
+        setIsLoading(false);
+        return null;
+      }
+
       portRef.current = port;
       setIsPortConnected(true);
 
@@ -276,6 +304,7 @@ export function useTabContext(options: UseTabContextOptions = {}): UseTabContext
     error,
     isPortConnected,
     pendingAction,
+    voiceToggleTrigger,
     clearPendingAction,
     syncWithActiveTab,
     dismissTabChangeNotification,

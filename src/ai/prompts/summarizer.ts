@@ -48,7 +48,8 @@ RULES:
 - Provide EXACTLY 5 key takeaways.
 - Keep the TL;DR to ONE sentence only.
 - Write in clear, professional English.
-- Ground your summary strictly in the provided text. Do not hallucinate external facts.`,
+- Ground your summary strictly in the provided text. Do not hallucinate external facts.
+- Do NOT use raw LaTeX dollar signs ($ or $$) for formulas, Big-O notation, or code variables. Write O(1), O(n log d), arr[i] directly or in markdown code backticks.`,
 
   hinglish: `You are Madadgar, an expert bilingual reading assistant. Your task is to analyze the provided article or text and generate a conversational structured summary in colloquial Hinglish (Hindi written in Roman script, naturally blended with English technical terminology).
 
@@ -74,6 +75,7 @@ You MUST format your output strictly into the following three sections using exa
 RULES:
 - Exactly 5 key takeaways hone chahiye.
 - TL;DR sirf EK single sentence me ho.
+- Math ya Big-O expressions me dollar signs ($) use na karein. O(1), O(n log d) ya \`O(1)\` likhein.
 - Tone friendly, relatable aur natural Hinglish me ho (e.g., "Yeh article explain karta hai ki...", "Dhyan dene wali baat yeh hai...").
 - Text ke bahar ki koi fabricated baatein na likhein.`
 };

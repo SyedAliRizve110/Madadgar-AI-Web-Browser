@@ -10,6 +10,7 @@ import type {
   ContextMenuActionPayload,
 } from '@/common/types';
 import { MessageBus } from './message_bus';
+import { UniversalSidebarAdapter } from '@/common/sidebar_adapter';
 
 export const CONTEXT_MENU_IDS = {
   EXPLAIN: 'madadgar_explain' as ContextMenuActionId,
@@ -184,34 +185,13 @@ export class ContextMenuManager {
   }
 
   /**
-   * Opens the Chrome Side Panel for the given tab/window.
+   * Opens the Chrome Side Panel or Firefox Sidebar for the given tab/window.
    */
   public static async openSidePanel(tab?: chrome.tabs.Tab): Promise<boolean> {
-    if (typeof chrome === 'undefined' || !chrome.sidePanel?.open) {
-      return false;
-    }
-
-    // Try opening with windowId first (standard MV3 Chrome 116+)
-    if (tab?.windowId) {
-      try {
-        await chrome.sidePanel.open({ windowId: tab.windowId });
-        return true;
-      } catch (winErr) {
-        console.warn('[ContextMenuManager] Could not open side panel by windowId:', winErr);
-      }
-    }
-
-    // Fallback to tabId if available
-    if (tab?.id) {
-      try {
-        await (chrome.sidePanel as any).open({ tabId: tab.id });
-        return true;
-      } catch (tabErr) {
-        console.warn('[ContextMenuManager] Could not open side panel by tabId:', tabErr);
-      }
-    }
-
-    return false;
+    return UniversalSidebarAdapter.open({
+      windowId: tab?.windowId,
+      tabId: tab?.id,
+    });
   }
 
   /**

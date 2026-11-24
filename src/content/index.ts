@@ -12,6 +12,8 @@ import { DOMScanner } from './scanner';
 import { BadgeOverlay } from './overlay';
 import { ActionExecutor } from './executor';
 import { ContentGuardrails } from './guardrails';
+import { ContextHarvester } from './context_harvester';
+import { GhostwriterOverlay } from './ghostwriter_overlay';
 import type {
   ExtractReadabilityResponse,
   ScanDOMResponse,
@@ -207,6 +209,78 @@ export function handleContentScriptMessage(
     return true;
   }
 
+  // 9b. Fast-Path Direct Voice Navigation Handlers (Task 6.3)
+  if (messageType === 'EXECUTE_SCROLL') {
+    const direction = (message as any).direction || 'down';
+    const success = ActionExecutor.executeScroll(null, direction);
+    sendResponse({ success, direction });
+    return true;
+  }
+
+  if (messageType === 'CLICK_BADGE') {
+    const badgeId = (message as any).badgeNumber ?? (message as any).targetId;
+    if (typeof badgeId === 'number') {
+      try {
+        const success = ActionExecutor.executeBadgeClick(badgeId);
+        sendResponse({ success, badgeNumber: badgeId });
+      } catch (err: any) {
+        sendResponse({ success: false, error: err.message });
+      }
+    } else {
+      sendResponse({ success: false, error: 'badgeNumber must be a number.' });
+    }
+    return true;
+  }
+
+  if (messageType === 'CLICK_ELEMENT_TEXT') {
+    const targetText = (message as any).targetText;
+    if (typeof targetText === 'string') {
+      try {
+        const success = ActionExecutor.executeClickByText(targetText);
+        sendResponse({ success, targetText });
+      } catch (err: any) {
+        sendResponse({ success: false, error: err.message });
+      }
+    } else {
+      sendResponse({ success: false, error: 'targetText must be a string.' });
+    }
+    return true;
+  }
+
+  // 9b-2. Action Undo & Rollback Dispatcher (Task 6.7)
+  if (messageType === 'EXECUTE_UNDO') {
+    try {
+      const result = ActionExecutor.executeUndo((message as any).snapshot);
+      sendResponse(result);
+    } catch (err: any) {
+      sendResponse({ success: false, error: err.message });
+    }
+    return true;
+  }
+
+  // 9c. Context Harvester & Composer Injector (Task 6.5)
+  if (messageType === 'HARVEST_PAGE_CONTEXT') {
+    try {
+      const context = ContextHarvester.harvestPageContext(document);
+      sendResponse({ success: true, context });
+    } catch (err: any) {
+      sendResponse({ success: false, error: err.message });
+    }
+    return true;
+  }
+
+  if (messageType === 'INJECT_DRAFT') {
+    const textToInject = (message as any).text || '';
+    const mode = (message as any).mode || 'replace';
+    try {
+      const result = ContextHarvester.injectDraft(textToInject, { mode, doc: document });
+      sendResponse(result);
+    } catch (err: any) {
+      sendResponse({ success: false, error: err.message, editorType: 'none' });
+    }
+    return true;
+  }
+
   // 10. Explicit YouTube Transcript Extraction
   if (messageType === 'EXTRACT_YOUTUBE_TRANSCRIPT') {
     extractYouTubeTranscript(document)
@@ -286,6 +360,16 @@ export function initContentScript(): void {
   if (typeof document !== 'undefined') {
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('mouseup', handleSelectionChange);
+    GhostwriterOverlay.init();
+
+    // Task 5.4: Content-script level hotkey listener for Alt+V
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'v' || e.key === 'V') && !e.ctrlKey && !e.metaKey) {
+        chrome.runtime.sendMessage({ type: 'TOGGLE_VOICE_FROM_CONTENT' }).catch(() => {
+          // Extension might be reloading
+        });
+      }
+    });
   }
 }
 

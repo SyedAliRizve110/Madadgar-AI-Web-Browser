@@ -140,5 +140,6 @@ export const GEMINI_LITE_MODELS = [
 ] as const;
 
 export const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+export const DEFAULT_GROQ_WHISPER_MODEL = 'whisper-large-v3';
 
 export const MAX_AGENT_STEPS = 15;

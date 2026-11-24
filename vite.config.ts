@@ -8,11 +8,18 @@ const manifest = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, './src/manifest.json'), 'utf-8')
 );
 
+const targetBrowser = process.env.TARGET_BROWSER;
+const outDir = targetBrowser === 'chrome' ? 'dist/chrome' : targetBrowser === 'firefox' ? 'dist/firefox' : 'dist';
+
 export default defineConfig({
   plugins: [
     react(),
     crx({ manifest }),
   ],
+  build: {
+    outDir,
+    emptyOutDir: true,
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

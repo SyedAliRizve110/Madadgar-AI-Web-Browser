@@ -10,7 +10,6 @@ import {
   Copy,
   Check,
   MessageSquare,
-  Play,
   RotateCcw,
   Camera,
   EyeOff,
@@ -25,6 +24,7 @@ import type {
 } from '@/common/types';
 import { AIGateway, RateLimitCooldownError } from '@/ai/ai_gateway';
 import { parseTimestampToSeconds } from '@/content/extractor';
+import { renderInlineMarkdown } from '@/common/text_formatter';
 
 export interface ChatViewProps {
   context: PageContext | null;
@@ -154,8 +154,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ') || /^\d+\.\s+/.test(line.trim());
       const cleanLine = isBullet ? line.trim().replace(/^[-*]\s+|^\d+\.\s+/, '') : line;
 
-      // Handle bold **text** and `code` and timestamps [mm:ss]
-      const parts = renderInlineSpans(cleanLine);
+      // Handle bold **text**, `code`, LaTeX math ($...$ / $$...$$), and timestamps [mm:ss]
+      const parts = renderInlineMarkdown(cleanLine, handleTimestampClick);
 
       if (isBullet) {
         return (
@@ -175,66 +175,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
           {parts}
         </p>
       );
-    });
-  };
-
-  const renderInlineSpans = (text: string): React.ReactNode => {
-    const timestampRegex = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
-    const segments: React.ReactNode[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = timestampRegex.exec(text)) !== null) {
-      const matchIdx = match.index;
-      const fullMatch = match[0];
-      const time = match[1];
-
-      if (matchIdx > lastIndex) {
-        segments.push(renderBoldAndCode(text.substring(lastIndex, matchIdx)));
-      }
-
-      segments.push(
-        <button
-          key={`${matchIdx}-${time}`}
-          type="button"
-          onClick={() => handleTimestampClick(time)}
-          className="inline-flex items-center gap-1 mx-1 px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-mono font-medium transition-colors cursor-pointer"
-          title={`Seek video to ${time}`}
-        >
-          <Play className="w-2.5 h-2.5 fill-indigo-600 text-indigo-600" />
-          <span>{time}</span>
-        </button>
-      );
-
-      lastIndex = matchIdx + fullMatch.length;
-    }
-
-    if (lastIndex < text.length) {
-      segments.push(renderBoldAndCode(text.substring(lastIndex)));
-    }
-
-    return segments.length > 0 ? segments : renderBoldAndCode(text);
-  };
-
-  const renderBoldAndCode = (text: string): React.ReactNode => {
-    // Simple inline parser for **bold** and `code`
-    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return (
-          <strong key={i} className="font-semibold text-slate-900">
-            {part.slice(2, -2)}
-          </strong>
-        );
-      }
-      if (part.startsWith('`') && part.endsWith('`')) {
-        return (
-          <code key={i} className="bg-slate-100 text-indigo-800 px-1 py-0.5 rounded font-mono text-[11px]">
-            {part.slice(1, -1)}
-          </code>
-        );
-      }
-      return part;
     });
   };
 

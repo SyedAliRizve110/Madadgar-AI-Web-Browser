@@ -14,14 +14,17 @@ import {
   ChevronUp,
   OctagonX,
   FileText,
+  Undo2,
 } from 'lucide-react';
 import type {
   PageContext,
   AgentTaskSession,
   UserProfileMemory,
+  AutonomyMode,
 } from '@/common/types';
 import { ActionCard } from './ActionCard';
 import { AuditLog } from './AuditLog';
+import { AutonomySlider } from './AutonomySlider';
 
 export interface AgentPilotProps {
   context: PageContext | null;
@@ -45,6 +48,7 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
   const [goalInput, setGoalInput] = useState('');
   const [maxSteps, setMaxSteps] = useState(15);
   const [dryRun, setDryRun] = useState(false);
+  const [autonomyMode, setAutonomyMode] = useState<AutonomyMode>('co-pilot');
   const [isLoading, setIsLoading] = useState(false);
   const [isExecutingStep, setIsExecutingStep] = useState(false);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(true);
@@ -63,6 +67,9 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
           if (response?.session) {
             setSession(response.session);
             setDryRun(Boolean(response.session.dryRun));
+            if (response.session.autonomyMode) {
+              setAutonomyMode(response.session.autonomyMode);
+            }
           } else if (response && response.session === null) {
             setSession(null);
           }
@@ -125,6 +132,7 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
         dryRun,
         profileMemory,
         url: context?.url,
+        autonomyMode,
       },
       (response) => {
         setIsLoading(false);
@@ -136,6 +144,18 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
         }
       }
     );
+  };
+
+  // Autonomy Mode Change Handler (Task 6.2)
+  const handleAutonomyChange = (mode: AutonomyMode) => {
+    setAutonomyMode(mode);
+    if (session && session.status !== 'TASK_COMPLETED' && session.status !== 'TASK_ABORTED') {
+      chrome.runtime?.sendMessage({ type: 'SET_AUTONOMY_MODE', mode }, (response) => {
+        if (response?.session) {
+          setSession(response.session);
+        }
+      });
+    }
   };
 
   // 3. Approve Step
@@ -180,6 +200,26 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
         }
       }
     );
+  };
+
+  // 5b. Undo Last Action (Task 6.7)
+  const handleUndoStep = async () => {
+    setIsExecutingStep(true);
+    setErrorMessage(null);
+
+    chrome.runtime.sendMessage({ type: 'UNDO_LAST_ACTION' }, (response) => {
+      setIsExecutingStep(false);
+      if (chrome.runtime?.lastError || !response?.success) {
+        setErrorMessage(response?.error || chrome.runtime?.lastError?.message || 'Failed to undo action.');
+      } else {
+        // Refresh session
+        chrome.runtime.sendMessage({ type: 'GET_AGENT_SESSION' }, (sessionRes) => {
+          if (sessionRes?.session) {
+            setSession(sessionRes.session);
+          }
+        });
+      }
+    });
   };
 
   // 6. Reset Session to IDLE
@@ -339,6 +379,13 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
                 </label>
               </div>
 
+              {/* Autonomy Mode Selector (Task 6.2) */}
+              <AutonomySlider
+                mode={autonomyMode}
+                onChange={handleAutonomyChange}
+                disabled={isLoading}
+              />
+
               {/* Start Button */}
               <button
                 type="button"
@@ -379,6 +426,31 @@ export const AgentPilot: React.FC<AgentPilotProps> = ({
             </div>
           </div>
         ) : null}
+
+        {/* Active Session Tiered Autonomy Mode Selector (Task 6.2) */}
+        {session && session.status !== 'IDLE' && session.status !== 'TASK_COMPLETED' && session.status !== 'TASK_ABORTED' && (
+          <AutonomySlider
+            mode={autonomyMode}
+            onChange={handleAutonomyChange}
+            disabled={isLoading || isExecutingStep}
+          />
+        )}
+
+        {/* Action Undo Rollback Bar (Task 6.7) */}
+        {session && session.history && session.history.length > 0 && session.status !== 'TASK_COMPLETED' && session.status !== 'TASK_ABORTED' && (
+          <div className="flex justify-end pt-0.5">
+            <button
+              type="button"
+              onClick={handleUndoStep}
+              disabled={isExecutingStep}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-amber-800 bg-amber-50/80 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+              title="Rollback previous action state"
+            >
+              <Undo2 className="w-3 h-3 text-amber-600" />
+              <span>Undo Last Action</span>
+            </button>
+          </div>
+        )}
 
         {/* State: SCANNING_DOM / DOM_MAPPED / REASONING_AI */}
         {(session?.status === 'SCANNING_DOM' ||

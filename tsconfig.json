@@ -18,7 +18,7 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "types": ["chrome", "node"]
+    "types": ["chrome", "node", "webextension-polyfill"]
   },
   "include": ["src", "vite.config.ts"]
 }

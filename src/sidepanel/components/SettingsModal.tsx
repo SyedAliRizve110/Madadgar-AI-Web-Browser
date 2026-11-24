@@ -32,6 +32,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [geminiKey, setGeminiKey] = useState('');
   const [groqKey, setGroqKey] = useState('');
   const [language, setLanguage] = useState<SupportedLanguage>('en');
+  const [ghostwriterEnabled, setGhostwriterEnabled] = useState(true);
 
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showGroqKey, setShowGroqKey] = useState(false);
@@ -53,6 +54,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setGeminiKey(settings.geminiApiKey || '');
         setGroqKey(settings.groqApiKey || '');
         setLanguage(settings.defaultLanguage || 'en');
+        setGhostwriterEnabled(settings.ghostwriterEnabled !== false);
         if (settings.geminiApiKey) {
           setGeminiStatus('idle');
         }
@@ -134,6 +136,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         geminiApiKey: geminiKey.trim(),
         groqApiKey: groqKey.trim() || undefined,
         defaultLanguage: language,
+        ghostwriterEnabled,
       };
 
       await saveSettings(updatedSettings);
@@ -397,6 +400,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="text-[10px] text-slate-500 mt-0.5">Conversational Hindi in Roman script</p>
               </button>
             </div>
+          </div>
+
+          {/* Inline Ghostwriter Autocomplete Toggle (Task 6.6) */}
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 flex items-center justify-between">
+            <div className="space-y-0.5 pr-2">
+              <div className="font-semibold text-xs flex items-center gap-1.5 text-slate-900">
+                <span>Inline Ghostwriter Autocomplete</span>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-tight">
+                Floating contextual suggestions with Tab-to-accept in forms and editors.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGhostwriterEnabled(!ghostwriterEnabled)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                ghostwriterEnabled ? 'bg-indigo-600' : 'bg-slate-300'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                  ghostwriterEnabled ? 'translate-x-4' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Privacy Guarantee Box */}

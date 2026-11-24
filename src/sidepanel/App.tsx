@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Sparkles,
   BookOpen,
@@ -10,9 +10,12 @@ import {
   ShieldCheck,
   Key,
   AlertTriangle,
+  AlertCircle,
   Languages,
   Camera,
   User,
+  PenTool,
+  Layers,
 } from 'lucide-react';
 import { getSettings, getUserProfile } from '@/common/storage_adapter';
 import type { AppSettings, SupportedLanguage, ExtractReadabilityResponse, UserProfileMemory, SavedSkill, ContextMenuActionPayload } from '@/common/types';
@@ -23,17 +26,31 @@ import { ChatView } from './components/ChatView';
 import { AgentPilot } from './components/AgentPilot';
 import { ProfileManager } from './components/ProfileManager';
 import { SkillsDrawer } from './components/SkillsDrawer';
+import { DraftComposer } from './components/DraftComposer';
+import { ComparisonCard } from './components/ComparisonCard';
 import { RateLimitBanner } from './components/RateLimitBanner';
 import { MadadgarLogo } from './components/MadadgarLogo';
+import { VoiceMicButton } from './components/VoiceMicButton';
+import { MicrophonePermissionTab } from './components/MicrophonePermissionTab';
 import { useTabContext } from './hooks/useTabContext';
 import { AIGateway } from '@/ai/ai_gateway';
+import { VoiceGateway } from '@/voice/voice_gateway';
+import { SpeechSynthesizer, formatSummaryForSpeech } from '@/voice/speech_synthesizer';
+import { IntentRouter } from '@/voice/intent_router';
 import type { StructuredSummary } from '@/ai/prompts/summarizer';
 import { isYouTubeUrl, extractYouTubeVideoId } from '@/content/extractor';
+import type { VoiceInputState, VoiceEngineType, TTSPlaybackState } from '@/common/types';
 
 
-export type TabType = 'summarizer' | 'chat' | 'agent' | 'profile' | 'skills' | 'settings';
+export type TabType = 'summarizer' | 'chat' | 'agent' | 'draft' | 'compare' | 'profile' | 'skills' | 'settings';
 
 export const App: React.FC = () => {
+  const isPermissionPage = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('request_mic') === 'true';
+
+  if (isPermissionPage) {
+    return <MicrophonePermissionTab />;
+  }
+
   const [activeTab, setActiveTab] = useState<TabType>('summarizer');
   const [killSwitchTriggered, setKillSwitchTriggered] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -44,14 +61,80 @@ export const App: React.FC = () => {
   const [skillPendingAction, setSkillPendingAction] = useState<ContextMenuActionPayload | null>(null);
   const [agentInitialGoal, setAgentInitialGoal] = useState<string | null>(null);
 
+  // Task 5.4 & 5.5: Voice Speech STT & Cloud Whisper States
+  const [voiceState, setVoiceState] = useState<VoiceInputState>('idle');
+  const [voiceEngine, setVoiceEngine] = useState<VoiceEngineType>('none');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [liveVoiceTranscript, setLiveVoiceTranscript] = useState<string | null>(null);
+  const voiceGatewayRef = useRef<VoiceGateway | null>(null);
+
   const {
     context: activePageContext,
     hasTabChanged,
     pendingAction,
+    voiceToggleTrigger,
     clearPendingAction,
     syncWithActiveTab,
     dismissTabChangeNotification,
   } = useTabContext();
+
+  const handleSummarizeRef = useRef<((lang?: SupportedLanguage) => Promise<void>) | null>(null);
+  const handleVoiceTranscriptRef = useRef<(text: string) => void>(() => {});
+
+  const handleToggleVoice = useCallback(() => {
+    voiceGatewayRef.current?.toggleListening();
+  }, []);
+
+  // Initialize Voice Gateway
+  useEffect(() => {
+    const gw = new VoiceGateway({
+      lang: settings?.defaultLanguage === 'hinglish' ? 'en-IN' : 'en-US',
+    });
+
+    gw.onStateChange = (st, details) => {
+      setVoiceState(st);
+      if (details?.engine) setVoiceEngine(details.engine);
+      if (details?.error) setVoiceError(details.error);
+      else if (st === 'idle' || st === 'listening') setVoiceError(null);
+    };
+
+    gw.onTranscript = (result) => {
+      setLiveVoiceTranscript(result.text);
+      if (result.isFinal) {
+        handleVoiceTranscriptRef.current(result.text);
+      }
+    };
+
+    gw.onError = (err) => {
+      setVoiceError(err.message);
+    };
+
+    voiceGatewayRef.current = gw;
+    speechSynthesizerRef.current?.registerVoiceGateway(gw);
+
+    return () => {
+      gw.abort();
+    };
+  }, [settings?.defaultLanguage]);
+
+  // Global hotkey Alt+V listener in Side Panel window
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        handleToggleVoice();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleVoice]);
+
+  // React to Alt+V triggered via background service worker commands
+  useEffect(() => {
+    if (voiceToggleTrigger > 0) {
+      handleToggleVoice();
+    }
+  }, [voiceToggleTrigger, handleToggleVoice]);
 
   // Switch to Chat tab when a context menu action (Explain, Translate, Draft) is triggered
   useEffect(() => {
@@ -82,6 +165,174 @@ export const App: React.FC = () => {
   const [streamingChunk, setStreamingChunk] = useState('');
   const [summarizerLang, setSummarizerLang] = useState<SupportedLanguage>('en');
   const [summarizeError, setSummarizeError] = useState<string | null>(null);
+
+  // Tasks 5.6 & 5.7: Bilingual Text-to-Speech Engine & Audio Briefing States
+  const [ttsState, setTtsState] = useState<TTSPlaybackState>('idle');
+  const [ttsRate, setTtsRate] = useState<number>(1.0);
+  const speechSynthesizerRef = useRef<SpeechSynthesizer | null>(null);
+  const pendingAudioBriefingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    return () => {
+      speechSynthesizerRef.current?.stop();
+    };
+  }, []);
+
+  const handlePlayAudioBriefing = useCallback(
+    (targetSummary?: StructuredSummary | null, langToUse?: SupportedLanguage) => {
+      const sum = targetSummary || summary;
+      if (!sum) return;
+
+      const lang = langToUse || summarizerLang;
+      if (!speechSynthesizerRef.current) {
+        speechSynthesizerRef.current = new SpeechSynthesizer({
+          lang,
+          rate: ttsRate,
+          gateway: voiceGatewayRef.current || undefined,
+        });
+        speechSynthesizerRef.current.onStateChange = (st) => setTtsState(st);
+      } else {
+        speechSynthesizerRef.current.registerVoiceGateway(voiceGatewayRef.current);
+        speechSynthesizerRef.current.setLanguage(lang);
+      }
+
+      const spoken = formatSummaryForSpeech(sum, lang);
+      speechSynthesizerRef.current
+        .speak(spoken, { lang, rate: ttsRate })
+        .catch((err) => console.warn('[App] Spoken audio briefing error:', err));
+    },
+    [summary, summarizerLang, ttsRate]
+  );
+
+  const handlePauseAudioBriefing = useCallback(() => {
+    speechSynthesizerRef.current?.pause();
+  }, []);
+
+  const handleStopAudioBriefing = useCallback(() => {
+    speechSynthesizerRef.current?.stop();
+  }, []);
+
+  const handleTtsRateChange = useCallback((rate: number) => {
+    setTtsRate(rate);
+    speechSynthesizerRef.current?.setRate(rate);
+  }, []);
+
+  const handleVoiceTranscript = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+
+      const intent = IntentRouter.parse(text, settings?.defaultLanguage || 'en');
+
+      if (intent.type === 'STOP_SPEAKING') {
+        speechSynthesizerRef.current?.stop();
+        setLiveVoiceTranscript('Stopped audio playback');
+      } else if (intent.type === 'PAUSE_SPEAKING') {
+        speechSynthesizerRef.current?.pause();
+        setLiveVoiceTranscript('Paused audio');
+      } else if (intent.type === 'RESUME_SPEAKING') {
+        speechSynthesizerRef.current?.resume();
+        setLiveVoiceTranscript('Resumed audio');
+      } else if (intent.type === 'NAVIGATE_SCROLL') {
+        setLiveVoiceTranscript(`Scrolling ${intent.scrollDirection || 'down'}`);
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const activeId = tabs[0]?.id;
+            if (activeId) {
+              chrome.tabs.sendMessage(activeId, {
+                type: 'EXECUTE_SCROLL',
+                direction: intent.scrollDirection || 'down',
+              });
+            }
+          });
+        }
+      } else if (intent.type === 'CLICK_BADGE') {
+        setLiveVoiceTranscript(`Clicking badge #${intent.badgeNumber}`);
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const activeId = tabs[0]?.id;
+            if (activeId && intent.badgeNumber !== undefined) {
+              chrome.tabs.sendMessage(activeId, {
+                type: 'CLICK_BADGE',
+                badgeNumber: intent.badgeNumber,
+              });
+            }
+          });
+        }
+      } else if (intent.type === 'CLICK_ELEMENT_TEXT') {
+        setLiveVoiceTranscript(`Clicking "${intent.targetText}"`);
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const activeId = tabs[0]?.id;
+            if (activeId && intent.targetText) {
+              chrome.tabs.sendMessage(activeId, {
+                type: 'CLICK_ELEMENT_TEXT',
+                targetText: intent.targetText,
+              });
+            }
+          });
+        }
+      } else if (intent.type === 'BROWSER_NAVIGATION') {
+        setLiveVoiceTranscript(`Browser navigation: ${intent.browserNav}`);
+        if (typeof chrome !== 'undefined' && chrome.tabs) {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const activeId = tabs[0]?.id;
+            if (activeId) {
+              if (intent.browserNav === 'back') chrome.tabs.goBack(activeId).catch(() => {});
+              else if (intent.browserNav === 'forward') chrome.tabs.goForward(activeId).catch(() => {});
+              else if (intent.browserNav === 'reload') chrome.tabs.reload(activeId).catch(() => {});
+            }
+          });
+        }
+      } else if (intent.type === 'TASK_CONTROL') {
+        setLiveVoiceTranscript(`Task command: ${intent.taskControl}`);
+        if (typeof chrome !== 'undefined' && chrome.runtime) {
+          if (intent.taskControl === 'approve') {
+            chrome.runtime.sendMessage({ type: 'APPROVE_AGENT_STEP' });
+          } else if (intent.taskControl === 'skip') {
+            chrome.runtime.sendMessage({ type: 'SKIP_AGENT_STEP' });
+          } else if (intent.taskControl === 'cancel') {
+            chrome.runtime.sendMessage({ type: 'STOP_AGENT_TASK', reason: 'Spoken voice cancellation' });
+          } else if (intent.taskControl === 'undo') {
+            chrome.runtime.sendMessage({ type: 'UNDO_LAST_ACTION' });
+          }
+        }
+      } else if (intent.type === 'READ_ALOUD_SUMMARY') {
+        setActiveTab('summarizer');
+        handlePlayAudioBriefing();
+        setLiveVoiceTranscript('Reading summary aloud...');
+      } else if (intent.type === 'SUMMARIZE_PAGE') {
+        setActiveTab('summarizer');
+        const targetLang = intent.language || summarizerLang;
+        if (intent.language) {
+          setSummarizerLang(intent.language);
+        }
+        if (intent.audioBriefingRequested) {
+          pendingAudioBriefingRef.current = true;
+          setLiveVoiceTranscript('Summarizing page for audio briefing...');
+        } else {
+          setLiveVoiceTranscript('Summarizing page...');
+        }
+        handleSummarizeRef.current?.(targetLang);
+      } else if (activeTab === 'agent') {
+        setAgentInitialGoal(intent.cleanedText || text);
+      } else {
+        setSkillPendingAction({
+          actionId: 'voice',
+          prompt: intent.cleanedText || text,
+          selectedText: '',
+          timestamp: Date.now(),
+        });
+        setActiveTab('chat');
+      }
+
+      setTimeout(() => {
+        setLiveVoiceTranscript(null);
+      }, 4000);
+    },
+    [activeTab, settings?.defaultLanguage, summarizerLang, handlePlayAudioBriefing]
+  );
+
+  handleVoiceTranscriptRef.current = handleVoiceTranscript;
   const [cachedContent, setCachedContent] = useState<ExtractReadabilityResponse | null>(null);
   const [pageMetadata, setPageMetadata] = useState<{
     title: string;
@@ -248,6 +499,10 @@ export const App: React.FC = () => {
       }
 
       setSummary(result);
+      if (pendingAudioBriefingRef.current) {
+        pendingAudioBriefingRef.current = false;
+        handlePlayAudioBriefing(result, lang);
+      }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       setSummarizeError(errorMsg);
@@ -256,6 +511,7 @@ export const App: React.FC = () => {
       setIsStreamingSummary(false);
     }
   };
+  handleSummarizeRef.current = handleSummarize;
 
 
   const handleKillSwitch = () => {
@@ -301,6 +557,15 @@ export const App: React.FC = () => {
 
         {/* Header Actions */}
         <div className="flex items-center space-x-1.5">
+          {/* Task 5.4: Voice Push-to-Talk Mic Button */}
+          <VoiceMicButton
+            state={voiceState}
+            activeEngine={voiceEngine}
+            errorMessage={voiceError}
+            onToggle={handleToggleVoice}
+            size="sm"
+          />
+
           <button
             onClick={() => setIsScreenshotModalOpen(true)}
             title="Visual Inspection (Screenshot active viewport & Ask)"
@@ -332,13 +597,56 @@ export const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Active Tab Switch Sync Banner */}
+      {/* Voice Error / Microphone Permission Banner */}
+      {voiceError && (
+        <div className="mx-3 mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-900 shadow-xs">
+          <div className="flex items-center gap-1.5 min-w-0 pr-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="truncate">{voiceError}</span>
+          </div>
+          <button
+            onClick={() => VoiceGateway.openPermissionTab()}
+            className="shrink-0 px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-medium cursor-pointer"
+          >
+            Grant Access
+          </button>
+        </div>
+      )}
+
+      {/* Task 5.4: Live Voice Listening / Transcript Bar */}
+      {(voiceState === 'listening' || voiceState === 'recording' || voiceState === 'processing' || liveVoiceTranscript) && (
+        <div className="px-3 py-1.5 bg-indigo-50/95 border-b border-indigo-200 flex items-center justify-between text-xs text-indigo-900 animate-fadeIn">
+          <div className="flex items-center space-x-2 min-w-0">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+            </span>
+            <span className="truncate text-[11px] font-medium">
+              {voiceState === 'processing'
+                ? 'Transcribing audio with Groq Whisper...'
+                : liveVoiceTranscript
+                  ? `"${liveVoiceTranscript}"`
+                  : voiceEngine === 'cloud-whisper'
+                    ? 'Recording audio for Whisper... (Click to finish)'
+                    : 'Listening... Speak command or prompt (Alt+V)'}
+            </span>
+          </div>
+          <button
+            onClick={() => voiceGatewayRef.current?.abort()}
+            className="text-[10px] text-slate-500 hover:text-slate-800 px-1 cursor-pointer shrink-0"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Active Tab / Window Switch Sync Banner (Task 5.2) */}
       {hasTabChanged && (
         <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-200 flex items-center justify-between text-xs text-indigo-900 animate-fadeIn">
           <div className="flex items-center space-x-1.5 min-w-0">
             <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
             <span className="truncate text-[11px]">
-              Switched tabs. Sync context with active page?
+              Switched tab or window. Sync context with active page?
             </span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -410,6 +718,32 @@ export const App: React.FC = () => {
         >
           <Bot className="w-3.5 h-3.5" />
           <span>Pilot</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('draft')}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+            activeTab === 'draft'
+              ? 'bg-white text-indigo-600 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+          }`}
+          title="Email & Social Drafter"
+        >
+          <PenTool className="w-3.5 h-3.5" />
+          <span>Draft</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('compare')}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md font-medium transition-colors ${
+            activeTab === 'compare'
+              ? 'bg-white text-indigo-600 shadow-sm'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+          }`}
+          title="Cross-Tab Comparison Engine"
+        >
+          <Layers className="w-3.5 h-3.5" />
+          <span>Compare</span>
         </button>
 
         <button
@@ -516,6 +850,12 @@ export const App: React.FC = () => {
                     }}
                     onRefresh={() => handleSummarize()}
                     error={summarizeError}
+                    ttsState={ttsState}
+                    ttsRate={ttsRate}
+                    onPlayAudioBriefing={() => handlePlayAudioBriefing()}
+                    onPauseAudioBriefing={() => handlePauseAudioBriefing()}
+                    onStopAudioBriefing={() => handleStopAudioBriefing()}
+                    onRateChange={(r) => handleTtsRateChange(r)}
                   />
                 </div>
               </div>
@@ -588,6 +928,21 @@ export const App: React.FC = () => {
                 onInitialGoalHandled={() => setAgentInitialGoal(null)}
               />
             )}
+          </div>
+        )}
+
+        {activeTab === 'draft' && (
+          <div className="h-full flex-1 min-h-0 flex flex-col">
+            <DraftComposer
+              language={settings?.defaultLanguage || 'en'}
+              onClose={() => setActiveTab('summarizer')}
+            />
+          </div>
+        )}
+
+        {activeTab === 'compare' && (
+          <div className="h-full flex-1 min-h-0 flex flex-col">
+            <ComparisonCard onClose={() => setActiveTab('summarizer')} />
           </div>
         )}
 

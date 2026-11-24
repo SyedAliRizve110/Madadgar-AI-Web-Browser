@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Youtube,
   BookOpen,
@@ -10,13 +10,18 @@ import {
   ExternalLink,
   AlertCircle,
   Play,
+  Pause,
+  Square,
+  Volume2,
   ListChecks,
   FileText,
   Layers,
 } from 'lucide-react';
-import type { SupportedLanguage, YouTubeTranscriptSegment } from '@/common/types';
+import type { SupportedLanguage, YouTubeTranscriptSegment, TTSPlaybackState } from '@/common/types';
 import type { StructuredSummary } from '@/ai/prompts/summarizer';
 import { parseTimestampToSeconds } from '@/content/extractor';
+import { SpeechSynthesizer, formatSummaryForSpeech } from '@/voice/speech_synthesizer';
+import { renderInlineMarkdown } from '@/common/text_formatter';
 
 export type SummaryTab = 'all' | 'tldr' | 'highlights' | 'actions';
 
@@ -40,6 +45,12 @@ export interface SummaryCardProps {
   onSeekTimestamp?: (seconds: number) => void;
   onRefresh?: () => void;
   error?: string | null;
+  ttsState?: TTSPlaybackState;
+  ttsRate?: number;
+  onPlayAudioBriefing?: () => void;
+  onPauseAudioBriefing?: () => void;
+  onStopAudioBriefing?: () => void;
+  onRateChange?: (rate: number) => void;
 }
 
 export const SummaryCard: React.FC<SummaryCardProps> = ({
@@ -62,10 +73,81 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
   onSeekTimestamp,
   onRefresh,
   error,
+  ttsState: propTtsState,
+  ttsRate: propTtsRate = 1.0,
+  onPlayAudioBriefing,
+  onPauseAudioBriefing,
+  onStopAudioBriefing,
+  onRateChange,
 }) => {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<SummaryTab>('all');
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
+  const [internalTtsState, setInternalTtsState] = useState<TTSPlaybackState>('idle');
+  const [internalRate, setInternalRate] = useState<number>(1.0);
+  const internalSynthesizerRef = useRef<SpeechSynthesizer | null>(null);
+
+  const ttsState = propTtsState ?? internalTtsState;
+  const ttsRate = propTtsRate ?? internalRate;
+  const isSpeaking = ttsState === 'speaking';
+  const isPaused = ttsState === 'paused';
+  const isAudioActive = isSpeaking || isPaused;
+
+  useEffect(() => {
+    return () => {
+      internalSynthesizerRef.current?.stop();
+    };
+  }, []);
+
+  const handleTogglePlay = () => {
+    if (isSpeaking) {
+      if (onPauseAudioBriefing) onPauseAudioBriefing();
+      else {
+        internalSynthesizerRef.current?.pause();
+        setInternalTtsState('paused');
+      }
+    } else if (isPaused) {
+      if (onPlayAudioBriefing) onPlayAudioBriefing();
+      else {
+        internalSynthesizerRef.current?.resume();
+        setInternalTtsState('speaking');
+      }
+    } else {
+      if (!summary) return;
+      if (onPlayAudioBriefing) {
+        onPlayAudioBriefing();
+      } else {
+        if (!internalSynthesizerRef.current) {
+          internalSynthesizerRef.current = new SpeechSynthesizer({
+            lang: language,
+            rate: internalRate,
+          });
+          internalSynthesizerRef.current.onStateChange = (st) => setInternalTtsState(st);
+        }
+        const spokenText = formatSummaryForSpeech(summary, language);
+        internalSynthesizerRef.current.speak(spokenText, {
+          lang: language,
+          rate: internalRate,
+        }).catch((err) => console.warn('[SummaryCard] Internal TTS error:', err));
+      }
+    }
+  };
+
+  const handleStopAudio = () => {
+    if (onStopAudioBriefing) onStopAudioBriefing();
+    else {
+      internalSynthesizerRef.current?.stop();
+      setInternalTtsState('idle');
+    }
+  };
+
+  const handleSpeedSelect = (rate: number) => {
+    if (onRateChange) onRateChange(rate);
+    else {
+      setInternalRate(rate);
+      internalSynthesizerRef.current?.setRate(rate);
+    }
+  };
 
   const isYouTube = sourceType === 'youtube' || Boolean(videoId);
 
@@ -108,45 +190,10 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
   };
 
   /**
-   * Renders text containing [mm:ss] or [hh:mm:ss] timestamp references
-   * as clickable interactive badges with a play icon.
+   * Renders text containing Markdown formatting (bold, code, LaTeX math, and clickable timestamps).
    */
   const renderTextWithTimestamps = (text: string) => {
-    const timestampRegex = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
-    const parts: React.ReactNode[] = [];
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-
-    while ((match = timestampRegex.exec(text)) !== null) {
-      const matchIndex = match.index;
-      const fullMatch = match[0]; // e.g. "[01:24]"
-      const timeStr = match[1]; // e.g. "01:24"
-
-      if (matchIndex > lastIndex) {
-        parts.push(text.substring(lastIndex, matchIndex));
-      }
-
-      parts.push(
-        <button
-          key={`${matchIndex}-${timeStr}`}
-          type="button"
-          onClick={() => handleTimestampClick(timeStr)}
-          title={`Jump video to ${timeStr}`}
-          className="inline-flex items-center gap-1 mx-1 px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 border border-indigo-200 text-[11px] font-mono font-medium transition-colors shadow-2xs cursor-pointer group"
-        >
-          <Play className="w-2.5 h-2.5 fill-indigo-600 group-hover:fill-indigo-800 text-indigo-600" />
-          <span>{timeStr}</span>
-        </button>
-      );
-
-      lastIndex = matchIndex + fullMatch.length;
-    }
-
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
-    return parts.length > 0 ? parts : text;
+    return renderInlineMarkdown(text, handleTimestampClick);
   };
 
   return (
@@ -256,6 +303,74 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Spoken Audio Briefing Control Banner (Task 5.7) */}
+      {isAudioActive && (
+        <div className="mx-3.5 mt-2.5 p-2.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/90 to-blue-50/90 border border-indigo-200/80 rounded-xl shadow-xs flex items-center justify-between gap-2 transition-all">
+          <div className="flex items-center gap-2 min-w-0">
+            <div
+              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                isSpeaking ? 'bg-indigo-600 text-white animate-pulse' : 'bg-indigo-100 text-indigo-700'
+              }`}
+            >
+              <Volume2 className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-indigo-950 truncate">
+                  {isSpeaking ? 'Spoken Audio Briefing' : 'Briefing Paused'}
+                </span>
+                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-200/70 text-indigo-800">
+                  {language === 'hinglish' ? 'Hinglish Persona' : 'English Voice'}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 truncate">
+                Reading TL;DR & key highlights hands-free
+              </p>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Speed Selector: 1x, 1.25x, 1.5x */}
+            <div className="flex items-center bg-white/80 border border-indigo-200/80 rounded-md p-0.5 text-[10px] font-semibold text-slate-700">
+              {[1.0, 1.25, 1.5].map((rate) => (
+                <button
+                  key={rate}
+                  type="button"
+                  onClick={() => handleSpeedSelect(rate)}
+                  className={`px-1.5 py-0.5 rounded transition-colors ${
+                    ttsRate === rate ? 'bg-indigo-600 text-white shadow-2xs' : 'hover:bg-slate-100 text-slate-600'
+                  }`}
+                  title={`Set playback speed to ${rate}x`}
+                >
+                  {rate}x
+                </button>
+              ))}
+            </div>
+
+            {/* Play / Pause Toggle */}
+            <button
+              type="button"
+              onClick={handleTogglePlay}
+              className="w-7 h-7 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-2xs transition-colors cursor-pointer"
+              title={isSpeaking ? 'Pause audio briefing' : 'Resume audio briefing'}
+            >
+              {isSpeaking ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+            </button>
+
+            {/* Stop */}
+            <button
+              type="button"
+              onClick={handleStopAudio}
+              className="w-7 h-7 rounded-lg bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-600 hover:text-red-600 flex items-center justify-center transition-colors cursor-pointer"
+              title="Stop audio briefing"
+            >
+              <Square className="w-3 h-3 fill-current" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Section View Mode Tabs (When summary is loaded) */}
       {summary && !isLoading && (
@@ -458,16 +573,50 @@ export const SummaryCard: React.FC<SummaryCardProps> = ({
       </div>
 
       {/* Card Footer Actions */}
-      <div className="px-3.5 py-2.5 bg-slate-50 border-t border-slate-200/70 flex items-center justify-between text-xs">
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!summary && !streamingChunk}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-[11px] font-medium shadow-2xs cursor-pointer"
-        >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
-          <span>{copied ? 'Copied' : 'Copy Summary'}</span>
-        </button>
+      <div className="px-3.5 py-2.5 bg-slate-50 border-t border-slate-200/70 flex items-center justify-between text-xs gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!summary && !streamingChunk}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-[11px] font-medium shadow-2xs cursor-pointer"
+          >
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-500" />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+
+          {/* Read Aloud / Audio Briefing Button (Task 5.7) */}
+          <button
+            type="button"
+            onClick={handleTogglePlay}
+            disabled={!summary || isLoading || isStreaming}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors text-[11px] font-medium shadow-2xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+              isSpeaking
+                ? 'border-indigo-400 bg-indigo-50 text-indigo-700 animate-pulse'
+                : isPaused
+                ? 'border-amber-300 bg-amber-50 text-amber-800'
+                : 'border-slate-200 bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+            title="Listen to hands-free audio summary briefing (Task 5.7)"
+          >
+            {isSpeaking ? (
+              <>
+                <Pause className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Pause</span>
+              </>
+            ) : isPaused ? (
+              <>
+                <Play className="w-3.5 h-3.5 text-amber-600" />
+                <span>Resume</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Read Aloud</span>
+              </>
+            )}
+          </button>
+        </div>
 
         {onRefresh && (
           <button

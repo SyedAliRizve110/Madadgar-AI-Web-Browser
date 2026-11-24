@@ -11,8 +11,13 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:chrome": "tsc && vite build --outDir dist/chrome",
+    "build:firefox": "node scripts/manifest-transformer.js --target firefox",
+    "build:all": "npm run build:chrome && npm run build:firefox",
     "build:vercel": "node scripts/build-vercel.js",
     "zip": "npm run build && node scripts/package-zip.js",
+    "zip:chrome": "npm run build:chrome && node scripts/package-zip.js --target chrome",
+    "zip:firefox": "npm run build:firefox && node scripts/package-zip.js --target firefox",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
@@ -20,7 +25,8 @@
     "@mozilla/readability": "^0.5.0",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "webextension-polyfill": "^0.12.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.28",
@@ -29,6 +35,7 @@
     "@types/node": "^22.13.4",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@types/webextension-polyfill": "^0.12.6",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "jsdom": "^31.0.0",

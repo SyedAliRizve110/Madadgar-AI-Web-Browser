@@ -20,6 +20,7 @@ import {
   X,
   ExternalLink,
   Clock,
+  Undo2,
 } from 'lucide-react';
 import type { AuditLogEntry } from '@/common/types';
 import { getAuditLogs, clearAuditLogs, exportAuditLogsJson } from '@/common/storage_adapter';
@@ -380,6 +381,24 @@ export const AuditLog: React.FC<AuditLogProps> = ({ onClose, filterTaskId }) => 
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
+                    {entry.canUndo && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (typeof chrome !== 'undefined' && chrome.runtime) {
+                            await chrome.runtime.sendMessage({
+                              type: 'UNDO_LAST_ACTION',
+                            });
+                            fetchLogs();
+                          }
+                        }}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Rollback this action"
+                      >
+                        <Undo2 className="w-2.5 h-2.5" />
+                        <span>Undo</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleCopyEntry(entry)}

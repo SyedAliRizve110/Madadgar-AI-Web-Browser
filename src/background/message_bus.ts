@@ -12,8 +12,11 @@ import type {
   PageContextResultMessage,
   TabChangedMessage,
   TabUpdatedMessage,
+  WindowFocusChangedMessage,
   ExtractReadabilityResponse,
 } from '@/common/types';
+import { UniversalSidebarAdapter } from '@/common/sidebar_adapter';
+import { getBrowser } from '@/common/browser_adapter';
 
 export const PORT_NAME = 'madadgar-sidepanel';
 
@@ -277,16 +280,60 @@ export class MessageBus {
   }
 
   /**
+   * Listener for window focus changes across Chrome and Firefox (Task 5.2).
+   * Broadcasts WINDOW_FOCUS_CHANGED to notify Side Panel ports without dropping active state.
+   */
+  public static async handleWindowFocusChanged(windowId: number): Promise<void> {
+    const noneId = typeof chrome !== 'undefined' && chrome.windows?.WINDOW_ID_NONE !== undefined
+      ? chrome.windows.WINDOW_ID_NONE
+      : -1;
+    if (windowId === noneId) return;
+
+    console.log(`[MessageBus] Window focus changed to window ${windowId}`);
+    let activeTab: chrome.tabs.Tab | null = null;
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      try {
+        const tabs = await chrome.tabs.query({ active: true, windowId });
+        activeTab = tabs[0] || null;
+      } catch {
+        // window may have closed
+      }
+    }
+
+    const notification: WindowFocusChangedMessage = {
+      type: 'WINDOW_FOCUS_CHANGED',
+      windowId,
+      tabId: activeTab?.id,
+    };
+    this.broadcast(notification);
+
+    if (activeTab?.id) {
+      this.handleTabActivated({ tabId: activeTab.id, windowId });
+    }
+  }
+
+  /**
    * Initializes all background port and tab listeners.
    */
   public static init(): void {
     if (typeof chrome === 'undefined') return;
 
-    // 1. Port connection listener for Side Panel
+    // 1. Port connection listener for Side Panel (supports Chrome and Firefox)
     if (chrome.runtime?.onConnect) {
       chrome.runtime.onConnect.addListener((port) => {
         this.registerPort(port);
       });
+    }
+
+    const b = getBrowser();
+    if (b && (b as any).runtime?.onConnect && (b as any).runtime?.onConnect !== chrome.runtime?.onConnect) {
+      try {
+        (b as any).runtime.onConnect.addListener((port: chrome.runtime.Port) => {
+          this.registerPort(port);
+        });
+      } catch {
+        // ignore
+      }
     }
 
     // 2. Tab switch listener
@@ -303,7 +350,14 @@ export class MessageBus {
       });
     }
 
-    // 4. Runtime message listener for one-off request/response
+    // 4. Window focus listener across Chrome and Firefox without state dropping (Task 5.2)
+    UniversalSidebarAdapter.initWindowFocusListener((windowId) => {
+      this.handleWindowFocusChanged(windowId).catch((err) => {
+        console.warn('[MessageBus] Error handling window focus change:', err);
+      });
+    });
+
+    // 5. Runtime message listener for one-off request/response
     if (chrome.runtime?.onMessage) {
       chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (message?.type === 'GET_PAGE_CONTEXT') {

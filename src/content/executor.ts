@@ -7,7 +7,8 @@
 import { DOMScanner } from './scanner';
 import { BadgeOverlay } from './overlay';
 import { validateFieldActionSafety } from '@/safety/field_sanitizer';
-import type { AgentActionProposal, ExecuteActionResponse } from '@/common/types';
+import { UniversalContentWriter } from './universal_writer';
+import type { AgentActionProposal, ExecuteActionResponse, ActionPreSnapshot } from '@/common/types';
 
 export class ActionExecutor {
   /**
@@ -39,11 +40,20 @@ export class ActionExecutor {
 
     // 3. Global Scroll without a specific target
     if (action === 'scroll' && (target_id === undefined || target_id === null)) {
+      const preSnapshot: ActionPreSnapshot = {
+        action: 'scroll',
+        previousScroll: {
+          x: typeof window !== 'undefined' ? window.scrollX || 0 : 0,
+          y: typeof window !== 'undefined' ? window.scrollY || 0 : 0,
+        },
+        timestamp: Date.now(),
+      };
       const success = this.executeScroll(null, value || 'down');
       return {
         success,
         action: 'scroll',
         value: value || 'down',
+        preSnapshot,
       };
     }
 
@@ -89,7 +99,34 @@ export class ActionExecutor {
       };
     }
 
-    // 6. Execute Specific Action
+    // 6. Capture Pre-action Snapshot for Undo / Rollback (Task 6.7)
+    let preSnapshot: ActionPreSnapshot | undefined;
+    if (action === 'type' || action === 'select') {
+      let previousValue = '';
+      if (liveEl.tagName === 'INPUT' || liveEl.tagName === 'TEXTAREA') {
+        previousValue = (liveEl as HTMLInputElement | HTMLTextAreaElement).value || '';
+      } else if (liveEl.isContentEditable) {
+        previousValue = liveEl.textContent || '';
+      }
+      preSnapshot = {
+        targetId: target_id,
+        action,
+        previousValue,
+        timestamp: Date.now(),
+      };
+    } else if (action === 'scroll') {
+      preSnapshot = {
+        targetId: target_id,
+        action: 'scroll',
+        previousScroll: {
+          x: typeof window !== 'undefined' ? window.scrollX || 0 : 0,
+          y: typeof window !== 'undefined' ? window.scrollY || 0 : 0,
+        },
+        timestamp: Date.now(),
+      };
+    }
+
+    // 7. Execute Specific Action
     try {
       switch (action) {
         case 'click': {
@@ -109,6 +146,7 @@ export class ActionExecutor {
             action: 'type',
             targetId: target_id,
             value: textToType,
+            preSnapshot,
           };
         }
 
@@ -120,6 +158,7 @@ export class ActionExecutor {
             action: 'select',
             targetId: target_id,
             value: selectVal,
+            preSnapshot,
           };
         }
 
@@ -130,6 +169,7 @@ export class ActionExecutor {
             action: 'scroll',
             targetId: target_id,
             value: value || 'down',
+            preSnapshot,
           };
         }
 
@@ -241,7 +281,7 @@ export class ActionExecutor {
     const tagName = el.tagName.toLowerCase();
     const isInput = tagName === 'input';
     const isTextarea = tagName === 'textarea';
-    const isContentEditable = el.isContentEditable;
+    const isContentEditable = el.isContentEditable || UniversalContentWriter.isContentEditableTarget(el);
 
     if (!isInput && !isTextarea && !isContentEditable) {
       throw new Error(`Cannot type into element with tag <${tagName}>.`);
@@ -250,6 +290,11 @@ export class ActionExecutor {
     // Check readonly
     if ((el as HTMLInputElement).readOnly) {
       throw new Error('Cannot type into read-only element.');
+    }
+
+    // Universal rich-text / contenteditable injection (Task 6.4)
+    if (isContentEditable) {
+      return UniversalContentWriter.write(el, text);
     }
 
     // Focus target
@@ -277,8 +322,6 @@ export class ActionExecutor {
       } else {
         textareaEl.value = text;
       }
-    } else if (isContentEditable) {
-      el.textContent = text;
     }
 
     // Dispatch input, change, and blur events so reactive frameworks detect value update
@@ -361,6 +404,14 @@ export class ActionExecutor {
       case 'down':
         window.scrollBy({ top: distance, behavior: 'smooth' });
         break;
+      case 'half_up':
+      case 'half page up':
+        window.scrollBy({ top: -250, behavior: 'smooth' });
+        break;
+      case 'half_down':
+      case 'half page down':
+        window.scrollBy({ top: 250, behavior: 'smooth' });
+        break;
       case 'top':
         window.scrollTo({ top: 0, behavior: 'smooth' });
         break;
@@ -381,6 +432,99 @@ export class ActionExecutor {
     }
 
     return true;
+  }
+
+  /**
+   * Fast-path: Directly clicks an element by its numeric badge ID (Task 6.3)
+   */
+  public static executeBadgeClick(badgeId: number): boolean {
+    const el = DOMScanner.getElementById(badgeId);
+    if (!el || !el.isConnected) {
+      throw new Error(`Target element for badge #${badgeId} not found or no longer attached.`);
+    }
+    return this.executeClick(el);
+  }
+
+  /**
+   * Fast-path: Directly clicks an element matching target text or label (Task 6.3)
+   */
+  public static executeClickByText(targetText: string): boolean {
+    const trimmed = targetText.trim().toLowerCase();
+    if (!trimmed) return false;
+
+    // First search indexed scanned elements
+    const elements = DOMScanner.getLastScannedElements();
+    const matched = elements.find(
+      (e) => (e.label && e.label.toLowerCase().includes(trimmed)) || (e.placeholder && e.placeholder.toLowerCase().includes(trimmed))
+    );
+
+    if (matched) {
+      const el = DOMScanner.getElementById(matched.id);
+      if (el && el.isConnected) {
+        return this.executeClick(el);
+      }
+    }
+
+    // Fallback search live DOM interactive elements (buttons, links, inputs)
+    if (typeof document !== 'undefined') {
+      const candidates = Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"], [role="button"]')) as HTMLElement[];
+      for (const cand of candidates) {
+        const text = (cand.innerText || cand.textContent || cand.getAttribute('aria-label') || (cand as HTMLInputElement).value || '').trim().toLowerCase();
+        if (text === trimmed || text.includes(trimmed)) {
+          return this.executeClick(cand);
+        }
+      }
+    }
+
+    throw new Error(`No interactive element matching text "${targetText}" found.`);
+  }
+
+  /**
+   * Action Rollback Dispatcher: restores an element's pre-action state (Task 6.7)
+   */
+  public static executeUndo(snapshot: ActionPreSnapshot): { success: boolean; error?: string } {
+    if (!snapshot) {
+      return { success: false, error: 'No snapshot provided to undo.' };
+    }
+
+    if (snapshot.action === 'type' || snapshot.action === 'select') {
+      if (typeof snapshot.targetId !== 'number') {
+        return { success: false, error: 'Snapshot lacks targetId.' };
+      }
+      const liveEl = DOMScanner.getElementById(snapshot.targetId);
+      if (!liveEl || !liveEl.isConnected) {
+        return { success: false, error: `Target element #${snapshot.targetId} is no longer connected.` };
+      }
+
+      const valToRestore = snapshot.previousValue ?? '';
+      if (
+        liveEl.isContentEditable ||
+        liveEl.getAttribute('contenteditable') === 'true' ||
+        UniversalContentWriter.isContentEditableTarget(liveEl)
+      ) {
+        liveEl.innerHTML = '';
+        UniversalContentWriter.write(liveEl, valToRestore, { clearFirst: true });
+        if (liveEl.textContent !== valToRestore) {
+          liveEl.textContent = valToRestore;
+        }
+      } else if (liveEl.tagName === 'INPUT' || liveEl.tagName === 'TEXTAREA') {
+        const inputEl = liveEl as HTMLInputElement | HTMLTextAreaElement;
+        inputEl.focus();
+        inputEl.value = valToRestore;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return { success: true };
+    }
+
+    if (snapshot.action === 'scroll' && snapshot.previousScroll) {
+      if (typeof window !== 'undefined' && window.scrollTo) {
+        window.scrollTo(snapshot.previousScroll.x, snapshot.previousScroll.y);
+        return { success: true };
+      }
+    }
+
+    return { success: false, error: `Cannot undo action of type ${snapshot.action}.` };
   }
 
   /**

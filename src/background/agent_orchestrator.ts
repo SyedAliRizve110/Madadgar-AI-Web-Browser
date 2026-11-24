@@ -13,10 +13,12 @@ import {
   getUserProfile,
 } from '@/common/storage_adapter';
 import type {
+  ActionPreSnapshot,
   AgentActionProposal,
   AgentFSMStatus,
   AgentTaskSession,
   AgentTaskStepHistory,
+  AutonomyMode,
   ExecuteActionResponse,
   ScanDOMResponse,
   ScannedElement,
@@ -24,6 +26,7 @@ import type {
 } from '@/common/types';
 import { validateDomainSafety } from '@/safety/domain_rules';
 import { validateActionProposal } from '@/safety/action_validator';
+import { RiskClassifier } from '@/safety/risk_classifier';
 
 export const AGENT_TASK_SESSION_STORAGE_KEY = 'active_task_session';
 export const DEFAULT_MAX_STEPS = 15;
@@ -35,6 +38,7 @@ export class AgentOrchestrator {
   private static cachedElements: ScannedElement[] = [];
   private static listeners: Set<AgentSessionListener> = new Set();
   private static profileMemory: UserProfileMemory | undefined = undefined;
+  private static undoStack: ActionPreSnapshot[] = [];
 
   /**
    * Starts a new Agent task errand
@@ -47,6 +51,7 @@ export class AgentOrchestrator {
       dryRun?: boolean;
       profileMemory?: UserProfileMemory;
       url?: string;
+      autonomyMode?: AutonomyMode;
     }
   ): Promise<AgentTaskSession> {
     const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -66,6 +71,8 @@ export class AgentOrchestrator {
       history: [],
       error: null,
       dryRun,
+      autonomyMode: options?.autonomyMode || 'co-pilot',
+      consecutiveIdenticalActions: 0,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -76,6 +83,18 @@ export class AgentOrchestrator {
 
     // Begin first step loop
     return this.step();
+  }
+
+  /**
+   * Sets or updates the Tiered Autonomy mode (Task 6.2)
+   */
+  public static async setAutonomyMode(mode: AutonomyMode): Promise<AgentTaskSession | null> {
+    if (this.activeSession) {
+      this.activeSession.autonomyMode = mode;
+      await this.persistSession();
+      this.notifyListeners();
+    }
+    return this.activeSession;
   }
 
   /**
@@ -156,7 +175,7 @@ export class AgentOrchestrator {
         this.profileMemory
       );
 
-      // 3. Safety Validation
+      // 3. Safety Validation & Risk Classification (Task 6.1)
       session.status = 'SAFETY_VALIDATION';
       this.notifyListeners();
 
@@ -170,7 +189,31 @@ export class AgentOrchestrator {
         return session;
       }
 
-      // 4. Handle Terminal Proposals
+      // 4. Stagnation Detector (Task 6.2)
+      // Automatically abort if the agent attempts the same state/action >= 3 consecutive times
+      const lastStep = session.history[session.history.length - 1];
+      const isIdenticalAction =
+        Boolean(lastStep) &&
+        lastStep.action.action === proposal.action &&
+        lastStep.action.target_id === proposal.target_id &&
+        lastStep.action.value === proposal.value;
+
+      if (isIdenticalAction) {
+        session.consecutiveIdenticalActions = (session.consecutiveIdenticalActions || 0) + 1;
+      } else {
+        session.consecutiveIdenticalActions = 0;
+      }
+
+      if ((session.consecutiveIdenticalActions || 0) >= 2) {
+        session.status = 'ERROR';
+        session.error = `Stagnation detected: Agent attempted the same action (${proposal.action}${proposal.target_id !== undefined ? ` #${proposal.target_id}` : ''}) 3 times without progress.`;
+        await this.clearBadges(session.tabId);
+        await this.persistSession();
+        this.notifyListeners();
+        return session;
+      }
+
+      // 5. Handle Terminal Proposals
       if (proposal.action === 'done') {
         session.status = 'TASK_COMPLETED';
         session.pendingProposal = proposal;
@@ -189,7 +232,7 @@ export class AgentOrchestrator {
         return session;
       }
 
-      // 5. Highlight target element on the webpage
+      // 6. Highlight target element on the webpage
       if (typeof proposal.target_id === 'number') {
         await this.sendTabMessage(session.tabId, {
           type: 'HIGHLIGHT_ELEMENT',
@@ -198,8 +241,27 @@ export class AgentOrchestrator {
         });
       }
 
-      // 6. Wait for user approval
       session.pendingProposal = proposal;
+
+      // 7. Tiered Autonomy FSM Execution Gate (Task 6.2)
+      // Supervised Auto-Pilot automatically executes steps with risk score < 0.5.
+      // Pauses and prompts for approval on steps >= 0.5 or consequential actions.
+      const isAutoPilot = session.autonomyMode === 'auto-pilot';
+      const isLowRisk = (proposal.risk_score ?? 0) < 0.5 && !proposal.is_consequential;
+
+      if (isAutoPilot && isLowRisk) {
+        // Enforce Dynamic Mutation Quiescence (wait 250ms for DOM settling between autonomous steps)
+        await this.delay(250);
+
+        session.status = 'AWAITING_APPROVAL';
+        await this.persistSession();
+        this.notifyListeners();
+
+        // Automatically approve and execute the step
+        return this.approveStep();
+      }
+
+      // Manual Co-Pilot or Consequential Action: pause for explicit HITL approval
       session.status = 'AWAITING_APPROVAL';
       await this.persistSession();
       this.notifyListeners();
@@ -249,7 +311,12 @@ export class AgentOrchestrator {
       };
       session.history.push(stepRecord);
 
-      // Record audit log entry (Task 3.9)
+      // Record pre-action snapshot in Undo stack (Task 6.7)
+      if (execResult?.preSnapshot) {
+        this.undoStack.push(execResult.preSnapshot);
+      }
+
+      // Record audit log entry (Task 3.9 & Task 6.7)
       try {
         await appendAuditLog({
           taskId: session.taskId,
@@ -263,6 +330,8 @@ export class AgentOrchestrator {
           value: proposal.value,
           executionSuccess: execResult?.success ?? true,
           error: execResult?.error,
+          canUndo: Boolean(execResult?.preSnapshot),
+          preSnapshot: execResult?.preSnapshot,
         });
       } catch (logErr) {
         console.warn('[AgentOrchestrator] Failed to append audit log for approved step:', logErr);
@@ -410,6 +479,70 @@ export class AgentOrchestrator {
     this.notifyListeners();
 
     return session;
+  }
+
+  /**
+   * Action Rollback Dispatcher: reverts the most recent action executed on the page (Task 6.7)
+   */
+  public static async undoLastAction(tabId?: number): Promise<{
+    success: boolean;
+    error?: string;
+    snapshot?: ActionPreSnapshot;
+  }> {
+    const snapshot = this.undoStack.pop();
+    if (!snapshot) {
+      return { success: false, error: 'No previous action available to undo.' };
+    }
+
+    const targetTabId = tabId || this.activeSession?.tabId;
+    if (!targetTabId) {
+      return { success: false, error: 'No active tab target found for undo rollback.' };
+    }
+
+    try {
+      const res = await this.sendTabMessage<{ success: boolean; error?: string }>(targetTabId, {
+        type: 'EXECUTE_UNDO',
+        snapshot,
+      });
+
+      if (res?.success) {
+        // Log rollback event into Audit Log
+        try {
+          await appendAuditLog({
+            taskId: this.activeSession?.taskId || 'manual_undo',
+            stepIndex: (this.activeSession?.currentStep || 1) - 1,
+            actionType: snapshot.action,
+            targetBadgeId: snapshot.targetId,
+            description: `Rolled back ${snapshot.action} action (reverted to "${snapshot.previousValue ?? ''}")`,
+            reasoning: 'User requested action rollback (Undo stack dispatcher)',
+            userDecision: 'approved',
+            value: snapshot.previousValue,
+            executionSuccess: true,
+          });
+        } catch {
+          // Non-fatal
+        }
+
+        if (this.activeSession && this.activeSession.history.length > 0) {
+          this.activeSession.history.pop();
+          if (this.activeSession.currentStep > 1) {
+            this.activeSession.currentStep -= 1;
+          }
+          await this.persistSession();
+          this.notifyListeners();
+        }
+
+        return { success: true, snapshot };
+      } else {
+        return { success: false, error: res?.error || 'Rollback execution failed in content script.' };
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  public static getUndoStack(): ActionPreSnapshot[] {
+    return [...this.undoStack];
   }
 
   /**
@@ -564,6 +697,23 @@ export class AgentOrchestrator {
     proposal: AgentActionProposal,
     elements: ScannedElement[]
   ): { safe: boolean; reason?: string } {
+    // 1. Evaluate deterministic risk assessment score and levels (Task 6.1)
+    const targetEl = elements.find((e) => e.id === proposal.target_id);
+    const assessment = RiskClassifier.assess(proposal, targetEl, this.activeSession?.url);
+
+    proposal.risk_score = assessment.score;
+    proposal.risk_level = assessment.level;
+    if (assessment.requiresConfirmation || assessment.score >= 0.5) {
+      proposal.is_consequential = true;
+    }
+
+    if (assessment.isHardBlocked) {
+      return {
+        safe: false,
+        reason: assessment.reasons[0] || 'Proposed action failed deterministic safety policy.',
+      };
+    }
+
     const safety = validateActionProposal(proposal, elements, this.activeSession?.url);
     if (!safety.safe) {
       return {

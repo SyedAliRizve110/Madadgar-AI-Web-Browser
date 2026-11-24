@@ -151,24 +151,94 @@ export function createZipArchive(sourceDir, outputFile) {
   };
 }
 
+/**
+ * High-level helper to package extension distribution for Chrome or Firefox.
+ */
+export function packageExtension(options = {}) {
+  const pkgJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+  const version = pkgJson.version || '1.0.0';
+  const target = options.target || (process.argv.includes('--target') ? process.argv[process.argv.indexOf('--target') + 1] : undefined);
+
+  let distDir = options.dir;
+  let outputZip = options.out;
+
+  if (!distDir) {
+    if (target === 'firefox') {
+      distDir = path.join(rootDir, 'dist/firefox');
+    } else if (target === 'chrome') {
+      distDir = path.join(rootDir, 'dist/chrome');
+    } else {
+      distDir = fs.existsSync(path.join(rootDir, 'dist/chrome')) ? path.join(rootDir, 'dist/chrome') : path.join(rootDir, 'dist');
+    }
+  }
+
+  if (!outputZip) {
+    if (target === 'firefox') {
+      outputZip = path.join(rootDir, `madadgar-firefox-v${version}.zip`);
+    } else if (target === 'chrome') {
+      outputZip = path.join(rootDir, `madadgar-chrome-v${version}.zip`);
+    } else {
+      outputZip = path.join(rootDir, `madadgar-v${version}.zip`);
+    }
+  }
+
+  return createZipArchive(distDir, outputZip);
+}
+
 // Self-executing runner when executed via node
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const pkgJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
   const version = pkgJson.version || '1.0.0';
-  const distDir = path.join(rootDir, 'dist');
-  const outputZip = path.join(rootDir, `madadgar-v${version}.zip`);
 
-  console.log(`[Madadgar Release] Packaging extension distribution v${version}...`);
+  const args = process.argv.slice(2);
+  const targetIndex = args.indexOf('--target');
+  const target = targetIndex !== -1 ? args[targetIndex + 1] : undefined;
+
+  const dirIndex = args.indexOf('--dir');
+  const customDir = dirIndex !== -1 ? path.resolve(rootDir, args[dirIndex + 1]) : undefined;
+
+  const outIndex = args.indexOf('--out');
+  const customOut = outIndex !== -1 ? path.resolve(rootDir, args[outIndex + 1]) : undefined;
+
+  let distDir = customDir;
+  let outputZip = customOut;
+
+  if (!distDir) {
+    if (target === 'firefox') {
+      distDir = path.join(rootDir, 'dist/firefox');
+    } else if (target === 'chrome') {
+      distDir = path.join(rootDir, 'dist/chrome');
+    } else {
+      distDir = path.join(rootDir, 'dist');
+    }
+  }
+
+  if (!outputZip) {
+    if (target === 'firefox') {
+      outputZip = path.join(rootDir, `madadgar-firefox-v${version}.zip`);
+    } else if (target === 'chrome') {
+      outputZip = path.join(rootDir, `madadgar-chrome-v${version}.zip`);
+    } else {
+      outputZip = path.join(rootDir, `madadgar-v${version}.zip`);
+    }
+  }
+
+  console.log(`[Madadgar Release] Packaging extension distribution v${version}${target ? ` (${target})` : ''}...`);
   try {
     const result = createZipArchive(distDir, outputZip);
     const savingsPercent = ((1 - result.compressedBytes / result.uncompressedBytes) * 100).toFixed(1);
 
-    // Also sync to landing directory for static landing page hosting
+    // Also sync standard release to landing directory for static landing page hosting
     const landingDir = path.join(rootDir, 'landing');
     if (fs.existsSync(landingDir)) {
-      const landingZip = path.join(landingDir, `madadgar-v${version}.zip`);
+      const landingZip = path.join(landingDir, path.basename(outputZip));
       fs.copyFileSync(outputZip, landingZip);
       console.log(`  Landing:      Synced to landing/${path.basename(landingZip)}`);
+
+      // If chrome target, also maintain legacy filename
+      if (target === 'chrome' || !target) {
+        fs.copyFileSync(outputZip, path.join(landingDir, `madadgar-v${version}.zip`));
+      }
     }
 
     console.log(`[Madadgar Release] Successfully generated distribution archive:`);

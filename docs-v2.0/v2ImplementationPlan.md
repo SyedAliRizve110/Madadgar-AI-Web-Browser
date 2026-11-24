@@ -138,11 +138,11 @@ Enable complete cross-browser portability across Chrome and Firefox, establish t
 ---
 
 ### Phase 5 Acceptance Criteria & Verification
-- [ ] Extension compiles cleanly for both Chrome (`dist/chrome`) and Firefox (`dist/firefox`).
-- [ ] Side panel opens natively in Google Chrome, Microsoft Edge, and Mozilla Firefox.
-- [ ] Pressing `Alt+V` opens microphone and captures speech with confidence $\ge 0.75$.
-- [ ] Cloud Whisper activates seamlessly if local speech recognition encounters heavy dialect or error.
-- [ ] TTS audio briefing plays clean speech in English and Hinglish without acoustic mic feedback.
+- [x] Extension compiles cleanly for both Chrome (`dist/chrome`) and Firefox (`dist/firefox`).
+- [x] Side panel opens natively in Google Chrome, Microsoft Edge, and Mozilla Firefox.
+- [x] Pressing `Alt+V` opens microphone and captures speech with confidence $\ge 0.75$.
+- [x] Cloud Whisper activates seamlessly if local speech recognition encounters heavy dialect or error.
+- [x] TTS audio briefing plays clean speech in English and Hinglish without acoustic mic feedback.
 
 ---
 
@@ -228,12 +228,12 @@ Upgrade the agent from strictly manual step confirmations to a configurable, saf
 ---
 
 ### Phase 6 Acceptance Criteria & Verification
-- [ ] Auto-Pilot mode navigates standard search and read errands hands-free.
-- [ ] Consequential buttons (`Pay`, `Place Order`, `Delete`) demand double-confirmation even in Auto-Pilot mode.
-- [ ] Voice navigation directives (*"Scroll down"*, *"Click badge 3"*) execute in $< 200$ms.
-- [ ] Rich text inserts flawlessly into Gmail and LinkedIn composers without formatting corruption.
-- [ ] Ghostwriter suggestions appear cleanly and accept on `Tab`.
-- [ ] Spoken *"Undo"* successfully reverts text input modifications.
+- [x] Auto-Pilot mode navigates standard search and read errands hands-free.
+- [x] Consequential buttons (`Pay`, `Place Order`, `Delete`) demand double-confirmation even in Auto-Pilot mode.
+- [x] Voice navigation directives (*"Scroll down"*, *"Click badge 3"*) execute in $< 200$ms.
+- [x] Rich text inserts flawlessly into Gmail and LinkedIn composers without formatting corruption.
+- [x] Ghostwriter suggestions appear cleanly and accept on `Tab`.
+- [x] Spoken *"Undo"* successfully reverts text input modifications.
 
 ---
 
@@ -306,7 +306,7 @@ Enable cross-tab parallel errand coordination, integrate on-device zero-API-key 
 ---
 
 ### Phase 7 Acceptance Criteria & Verification
-- [ ] Multi-tab comparison errand extracts and compares data across 3 distinct e-commerce tabs in $< 10$s.
+- [x] Multi-tab comparison errand extracts and compares data across 3 distinct e-commerce tabs in $< 10$s.
 - [ ] On-device Gemini Nano summarizes web articles with zero external network requests on compatible Chrome versions.
 - [ ] Semantic history search accurately retrieves past pages by concept rather than exact keyword matches.
 - [ ] Set-of-Mark coordinate clicks accurately interact with canvas buttons.

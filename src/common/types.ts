@@ -8,6 +8,7 @@ export interface AppSettings {
   geminiApiKey: string;
   groqApiKey?: string;
   defaultLanguage: SupportedLanguage;
+  ghostwriterEnabled?: boolean;
 }
 
 export interface UserProfilePersonal {
@@ -65,6 +66,27 @@ export interface SavedSkill {
   createdAt: number;
 }
 
+export interface ActionPreSnapshot {
+  targetId?: number;
+  action: AgentActionType;
+  previousValue?: string;
+  previousScroll?: { x: number; y: number };
+  timestamp: number;
+}
+
+export type HarvestedPageType = 'email' | 'article' | 'general';
+
+export interface HarvestedPageContext {
+  type: HarvestedPageType;
+  url: string;
+  title?: string;
+  sender?: string;
+  subject?: string;
+  bodySnippet?: string;
+  fullBody?: string;
+  summary?: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   timestamp: number;
@@ -80,6 +102,8 @@ export interface AuditLogEntry {
   value?: string;
   executionSuccess?: boolean;
   error?: string;
+  canUndo?: boolean;
+  preSnapshot?: ActionPreSnapshot;
 }
 
 export interface StorageSchema {
@@ -153,7 +177,7 @@ export interface ChatMessage {
 }
 
 
-export type ContextMenuActionId = 'madadgar_explain' | 'madadgar_translate' | 'madadgar_draft' | 'custom';
+export type ContextMenuActionId = 'madadgar_explain' | 'madadgar_translate' | 'madadgar_draft' | 'custom' | 'voice';
 
 export interface ContextMenuActionPayload {
   actionId: ContextMenuActionId;
@@ -170,6 +194,8 @@ export type PortMessageType =
   | 'PAGE_CONTEXT_RESULT'
   | 'TAB_CHANGED'
   | 'TAB_UPDATED'
+  | 'WINDOW_FOCUS_CHANGED'
+  | 'TOGGLE_VOICE_INPUT'
   | 'SYNC_PAGE_CONTEXT'
   | 'CONTEXT_MENU_ACTION'
   | 'CAPTURE_VISIBLE_TAB'
@@ -211,6 +237,16 @@ export interface TabUpdatedMessage extends BasePortMessage {
   status?: string;
 }
 
+export interface WindowFocusChangedMessage extends BasePortMessage {
+  type: 'WINDOW_FOCUS_CHANGED';
+  windowId: number;
+  tabId?: number;
+}
+
+export interface ToggleVoiceInputMessage extends BasePortMessage {
+  type: 'TOGGLE_VOICE_INPUT';
+}
+
 export interface StreamChunkMessage extends BasePortMessage {
   type: 'STREAM_CHUNK';
   chunk: string;
@@ -248,6 +284,8 @@ export type PortMessage =
   | PageContextResultMessage
   | TabChangedMessage
   | TabUpdatedMessage
+  | WindowFocusChangedMessage
+  | ToggleVoiceInputMessage
   | StreamChunkMessage
   | ContextMenuActionMessage
   | CaptureScreenshotMessage
@@ -355,12 +393,34 @@ export interface LocateElementResponse {
 
 export type AgentActionType = 'click' | 'type' | 'select' | 'scroll' | 'done' | 'fail';
 
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | 'HARD_BLOCKED';
+
+export interface RiskAssessment {
+  score: number;
+  level: RiskLevel;
+  isHardBlocked: boolean;
+  requiresConfirmation: boolean;
+  reasons: string[];
+  signals: {
+    financial: boolean;
+    credentials: boolean;
+    destructive: boolean;
+    blacklistedDomain: boolean;
+    currencyDetected?: string;
+    formAction?: string;
+  };
+}
+
+export type AutonomyMode = 'co-pilot' | 'auto-pilot';
+
 export interface AgentActionProposal {
   action: AgentActionType;
   target_id?: number;
   value?: string;
   reason: string;
   is_consequential?: boolean;
+  risk_score?: number;
+  risk_level?: RiskLevel;
 }
 
 export interface ExecuteActionMessage {
@@ -376,6 +436,7 @@ export interface ExecuteActionResponse {
   value?: string;
   error?: string;
   dryRun?: boolean;
+  preSnapshot?: ActionPreSnapshot;
 }
 
 // ---------------------------------------------------------------------------
@@ -416,7 +477,121 @@ export interface AgentTaskSession {
   history: AgentTaskStepHistory[];
   error?: string | null;
   dryRun?: boolean;
+  autonomyMode?: AutonomyMode;
+  consecutiveIdenticalActions?: number;
   createdAt: number;
   updatedAt: number;
 }
+
+// ---------------------------------------------------------------------------
+// Task 5.4 & 5.5: Voice Speech & Fallback Subsystem Types
+// ---------------------------------------------------------------------------
+
+export type VoiceInputState = 'idle' | 'listening' | 'recording' | 'processing' | 'error';
+export type VoiceEngineType = 'local-speech' | 'cloud-whisper' | 'none';
+
+export interface VoiceTranscriptResult {
+  text: string;
+  confidence: number;
+  isFinal: boolean;
+  engine: 'local' | 'whisper';
+  lowConfidence?: boolean;
+}
+
+export interface VoicePermissionStatus {
+  state: 'granted' | 'denied' | 'prompt' | 'unsupported';
+  canAsk: boolean;
+  instructions?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Tasks 5.6 & 5.7: Bilingual TTS Voice Engine & Voice Intent Router
+// ---------------------------------------------------------------------------
+
+export type TTSPlaybackState = 'idle' | 'speaking' | 'paused';
+
+export interface TTSOptions {
+  lang?: SupportedLanguage | string;
+  rate?: number; // 0.75, 1.0, 1.25, 1.5, 2.0
+  pitch?: number;
+  volume?: number;
+  voiceName?: string;
+}
+
+export interface TTSVoiceInfo {
+  name: string;
+  lang: string;
+  default: boolean;
+  localService: boolean;
+}
+
+export type VoiceIntentType =
+  | 'SUMMARIZE_PAGE'
+  | 'READ_ALOUD_SUMMARY'
+  | 'STOP_SPEAKING'
+  | 'PAUSE_SPEAKING'
+  | 'RESUME_SPEAKING'
+  | 'NAVIGATE_SCROLL'
+  | 'CLICK_BADGE'
+  | 'CLICK_ELEMENT_TEXT'
+  | 'BROWSER_NAVIGATION'
+  | 'TASK_CONTROL'
+  | 'GENERAL_INPUT';
+
+export interface VoiceIntent {
+  type: VoiceIntentType;
+  rawText: string;
+  cleanedText: string;
+  audioBriefingRequested?: boolean;
+  language?: SupportedLanguage;
+  confidence?: number;
+  scrollDirection?: 'up' | 'down' | 'top' | 'bottom' | 'half_up' | 'half_down';
+  badgeNumber?: number;
+  targetText?: string;
+  browserNav?: 'back' | 'forward' | 'reload';
+  taskControl?: 'pause' | 'resume' | 'cancel' | 'approve' | 'skip' | 'undo';
+  metadata?: Record<string, any>;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7: Multi-Tab Intelligence & Comparison Types (Tasks 7.1 & 7.2)
+// ---------------------------------------------------------------------------
+
+export type ManagedTabStatus = 'opening' | 'loading' | 'ready' | 'error' | 'closed';
+
+export interface ManagedTab {
+  tabId: number;
+  url: string;
+  title?: string;
+  status: ManagedTabStatus;
+  createdAt: number;
+  updatedAt: number;
+  error?: string;
+}
+
+export interface ComparisonItem {
+  tabId: number;
+  title: string;
+  url: string;
+  attributes: Record<string, string>;
+}
+
+export interface ComparisonMatrix {
+  topic: string;
+  attributes: string[];
+  items: ComparisonItem[];
+  summary: string;
+  recommendation?: string;
+}
+
+export interface TabExtractionResult {
+  tabId: number;
+  url: string;
+  title: string;
+  content: string;
+  success: boolean;
+  error?: string;
+}
+
+
 

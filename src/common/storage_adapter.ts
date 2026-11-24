@@ -1,33 +1,67 @@
 /**
  * Madadgar Local Storage Adapter
- * Strongly-typed async wrapper around chrome.storage.local.
+ * Strongly-typed async wrapper around browser.storage.local (webextension-polyfill) & chrome.storage.local.
  * Provides fallback store for testing and browser preview environments.
  * Strictly local-only: Zero network calls or external telemetry.
  */
 
 import { STORAGE_KEYS, DEFAULT_LANGUAGE, DEFAULT_USER_PROFILE, DEMO_USER_PROFILE, DEFAULT_SAVED_SKILLS } from './constants';
 import type { AppSettings, StorageSchema, SupportedLanguage, AgentTaskSession, AuditLogEntry, UserProfileMemory, SavedSkill } from './types';
+import { getBrowser, isChromium } from './browser_adapter';
 
 // In-memory fallback for unit testing and non-extension contexts
 const memoryStore = new Map<string, unknown>();
 
-const isChromeStorageAvailable = (): boolean => {
+const isStorageAvailable = (): boolean => {
+  const b = getBrowser();
+  if (b?.storage?.local) return true;
   return typeof chrome !== 'undefined' && !!chrome.storage?.local;
 };
 
+export interface StorageUsageReport {
+  bytesInUse: number;
+  quotaBytes: number;
+  percentageUsed: number;
+}
+
 /**
- * Low-level storage getter
+ * Low-level storage getter (supports webextension-polyfill, native browser.*, and chrome.storage.local)
+ * In Chromium, uses direct native chrome.storage.local for zero-overhead performance.
  */
 export async function getStorageItem<K extends keyof StorageSchema>(
   key: K
 ): Promise<StorageSchema[K] | undefined> {
-  if (isChromeStorageAvailable()) {
+  // 1. Chromium fast-path: zero-overhead native access
+  if (isChromium() && typeof chrome !== 'undefined' && chrome.storage?.local) {
     return new Promise((resolve, reject) => {
       chrome.storage.local.get([key as string], (result) => {
-        if (chrome.runtime.lastError) {
+        if (chrome.runtime?.lastError) {
           return reject(new Error(chrome.runtime.lastError.message));
         }
-        resolve(result[key as string] as StorageSchema[K] | undefined);
+        resolve(result?.[key as string] as StorageSchema[K] | undefined);
+      });
+    });
+  }
+
+  // 2. Firefox / WebExtension polyfill: browser.storage.local
+  const b = getBrowser();
+  if (b?.storage?.local && typeof b.storage.local.get === 'function') {
+    try {
+      const result = await b.storage.local.get(key as string);
+      return (result as Record<string, unknown>)[key as string] as StorageSchema[K] | undefined;
+    } catch {
+      // Fall through to callback-style chrome.storage.local
+    }
+  }
+
+  // 3. Fallback callback-style chrome.storage.local
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.get([key as string], (result) => {
+        if (chrome.runtime?.lastError) {
+          return reject(new Error(chrome.runtime.lastError.message));
+        }
+        resolve(result?.[key as string] as StorageSchema[K] | undefined);
       });
     });
   }
@@ -37,17 +71,73 @@ export async function getStorageItem<K extends keyof StorageSchema>(
 }
 
 /**
- * Low-level storage setter
+ * Low-level storage setter with automatic quota recovery
+ * In Chromium, uses direct native chrome.storage.local for zero-overhead performance.
  */
 export async function setStorageItem<K extends keyof StorageSchema>(
   key: K,
   value: StorageSchema[K]
 ): Promise<void> {
-  if (isChromeStorageAvailable()) {
+  // 1. Chromium fast-path: zero-overhead native access
+  if (isChromium() && typeof chrome !== 'undefined' && chrome.storage?.local) {
     return new Promise((resolve, reject) => {
-      chrome.storage.local.set({ [key as string]: value }, () => {
-        if (chrome.runtime.lastError) {
-          return reject(new Error(chrome.runtime.lastError.message));
+      chrome.storage.local.set({ [key as string]: value }, async () => {
+        if (chrome.runtime?.lastError) {
+          const errMsg = chrome.runtime.lastError.message || '';
+          if (/quota/i.test(errMsg)) {
+            console.warn('[StorageAdapter] Chrome storage quota exceeded. Pruning audit logs...');
+            await pruneOldAuditLogsIfNeeded(25);
+            chrome.storage.local.set({ [key as string]: value }, () => {
+              if (chrome.runtime?.lastError) {
+                return reject(new Error(chrome.runtime.lastError.message));
+              }
+              resolve();
+            });
+            return;
+          }
+          return reject(new Error(errMsg));
+        }
+        resolve();
+      });
+    });
+  }
+
+  // 2. Firefox / WebExtension polyfill: browser.storage.local
+  const b = getBrowser();
+  if (b?.storage?.local && typeof b.storage.local.set === 'function') {
+    try {
+      await b.storage.local.set({ [key as string]: value });
+      return;
+    } catch (err: unknown) {
+      const errMsg = String((err as Error)?.message || '');
+      if (/quota/i.test(errMsg)) {
+        console.warn('[StorageAdapter] Quota exceeded. Pruning audit logs and retrying...');
+        await pruneOldAuditLogsIfNeeded(25);
+        await b.storage.local.set({ [key as string]: value });
+        return;
+      }
+      throw err;
+    }
+  }
+
+  // 3. Fallback callback-style chrome.storage.local
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [key as string]: value }, async () => {
+        if (chrome.runtime?.lastError) {
+          const errMsg = chrome.runtime.lastError.message || '';
+          if (/quota/i.test(errMsg)) {
+            console.warn('[StorageAdapter] Chrome storage quota exceeded. Pruning audit logs...');
+            await pruneOldAuditLogsIfNeeded(25);
+            chrome.storage.local.set({ [key as string]: value }, () => {
+              if (chrome.runtime?.lastError) {
+                return reject(new Error(chrome.runtime.lastError.message));
+              }
+              resolve();
+            });
+            return;
+          }
+          return reject(new Error(errMsg));
         }
         resolve();
       });
@@ -64,10 +154,34 @@ export async function setStorageItem<K extends keyof StorageSchema>(
 export async function removeStorageItem<K extends keyof StorageSchema>(
   key: K
 ): Promise<void> {
-  if (isChromeStorageAvailable()) {
+  // 1. Chromium fast-path
+  if (isChromium() && typeof chrome !== 'undefined' && chrome.storage?.local) {
     return new Promise((resolve, reject) => {
       chrome.storage.local.remove([key as string], () => {
-        if (chrome.runtime.lastError) {
+        if (chrome.runtime?.lastError) {
+          return reject(new Error(chrome.runtime.lastError.message));
+        }
+        resolve();
+      });
+    });
+  }
+
+  // 2. Firefox / WebExtension polyfill
+  const b = getBrowser();
+  if (b?.storage?.local && typeof b.storage.local.remove === 'function') {
+    try {
+      await b.storage.local.remove(key as string);
+      return;
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 3. Fallback chrome.storage.local
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.remove([key as string], () => {
+        if (chrome.runtime?.lastError) {
           return reject(new Error(chrome.runtime.lastError.message));
         }
         resolve();
@@ -82,10 +196,33 @@ export async function removeStorageItem<K extends keyof StorageSchema>(
  * Clear all Madadgar local storage items
  */
 export async function clearAllStorage(): Promise<void> {
-  if (isChromeStorageAvailable()) {
+  // 1. Chromium fast-path
+  if (isChromium() && typeof chrome !== 'undefined' && chrome.storage?.local) {
     return new Promise((resolve, reject) => {
       chrome.storage.local.clear(() => {
-        if (chrome.runtime.lastError) {
+        if (chrome.runtime?.lastError) {
+          return reject(new Error(chrome.runtime.lastError.message));
+        }
+        resolve();
+      });
+    });
+  }
+
+  // 2. Firefox / WebExtension polyfill
+  const b = getBrowser();
+  if (b?.storage?.local && typeof b.storage.local.clear === 'function') {
+    try {
+      await b.storage.local.clear();
+      return;
+    } catch {
+      // Fall through
+    }
+  }
+
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    return new Promise((resolve, reject) => {
+      chrome.storage.local.clear(() => {
+        if (chrome.runtime?.lastError) {
           return reject(new Error(chrome.runtime.lastError.message));
         }
         resolve();
@@ -94,6 +231,123 @@ export async function clearAllStorage(): Promise<void> {
   }
 
   memoryStore.clear();
+}
+
+/**
+ * Queries storage usage and quota bounds (supports getBytesInUse on Chrome/Firefox)
+ */
+export async function getStorageUsage(): Promise<StorageUsageReport> {
+  const quotaBytes = 10 * 1024 * 1024; // 10MB standard MV3 quota
+  let bytesInUse = 0;
+
+  const b = getBrowser();
+  if (b?.storage?.local && typeof (b.storage.local as unknown as { getBytesInUse?: (keys?: unknown) => Promise<number> }).getBytesInUse === 'function') {
+    try {
+      bytesInUse = await (b.storage.local as unknown as { getBytesInUse: (keys?: unknown) => Promise<number> }).getBytesInUse();
+    } catch {
+      // Fallback
+    }
+  } else if (typeof chrome !== 'undefined' && typeof chrome.storage?.local?.getBytesInUse === 'function') {
+    try {
+      bytesInUse = await new Promise<number>((resolve) => {
+        chrome.storage.local.getBytesInUse(null, (bytes) => {
+          resolve(bytes || 0);
+        });
+      });
+    } catch {
+      // Fallback
+    }
+  }
+
+  if (!bytesInUse && memoryStore.size > 0) {
+    let total = 0;
+    for (const [k, v] of memoryStore.entries()) {
+      total += (k.length + JSON.stringify(v || '').length) * 2;
+    }
+    bytesInUse = total;
+  }
+
+  const percentageUsed = Math.min(100, Number(((bytesInUse / quotaBytes) * 100).toFixed(2)));
+  return {
+    bytesInUse,
+    quotaBytes,
+    percentageUsed,
+  };
+}
+
+/**
+ * Prunes audit logs if local storage consumption is near capacity or when explicitly requested.
+ * Returns the number of logs removed.
+ */
+export async function pruneOldAuditLogsIfNeeded(keepCount = 50): Promise<number> {
+  const logs = await getAuditLogs();
+  if (logs.length > keepCount) {
+    const pruned = logs.slice(0, keepCount);
+    const removedCount = logs.length - keepCount;
+    // Direct set without triggering recursive prune
+    if (isStorageAvailable()) {
+      const b = getBrowser();
+      if (b?.storage?.local) {
+        await b.storage.local.set({ [STORAGE_KEYS.AUDIT_LOGS]: pruned });
+      } else if (chrome?.storage?.local) {
+        await new Promise<void>((res) => chrome.storage.local.set({ [STORAGE_KEYS.AUDIT_LOGS]: pruned }, () => res()));
+      }
+    } else {
+      memoryStore.set(STORAGE_KEYS.AUDIT_LOGS, pruned);
+    }
+    return removedCount;
+  }
+  return 0;
+}
+
+export interface StorageQuotaEnforcementResult {
+  cleanupTriggered: boolean;
+  prunedAuditLogs: number;
+  report: StorageUsageReport;
+}
+
+/**
+ * Task 5.1: Proactively monitors storage usage against a quota threshold (defaults to 80%).
+ * If percentageUsed >= thresholdPercent, performs graceful cleanup by pruning
+ * audit logs and clearing completed/dormant sessions.
+ */
+export async function checkAndEnforceStorageQuota(
+  thresholdPercent = 80
+): Promise<StorageQuotaEnforcementResult> {
+  let usage = await getStorageUsage();
+  if (usage.percentageUsed < thresholdPercent) {
+    return {
+      cleanupTriggered: false,
+      prunedAuditLogs: 0,
+      report: usage,
+    };
+  }
+
+  console.warn(`[StorageAdapter] Storage quota threshold reached (${usage.percentageUsed}% >= ${thresholdPercent}%). Executing graceful cleanup...`);
+
+  // Prune audit logs down to 25 items
+  const prunedCount = await pruneOldAuditLogsIfNeeded(25);
+
+  // If active task session is already completed or stopped, clean it up
+  const activeSession = await getActiveAgentSession();
+  if (
+    activeSession &&
+    (activeSession.status === 'TASK_COMPLETED' ||
+      activeSession.status === 'TASK_ABORTED' ||
+      activeSession.status === 'ERROR' ||
+      activeSession.status === 'IDLE')
+  ) {
+    await clearActiveAgentSession();
+  }
+
+  // Recalculate usage report post-cleanup
+  usage = await getStorageUsage();
+
+  return {
+    cleanupTriggered: true,
+    prunedAuditLogs: prunedCount,
+    report: usage,
+  };
 }
 
 /**

@@ -6,5 +6,11 @@ export interface ZipResult {
   outputFile: string;
 }
 
-export function createZipArchive(sourceDir: string, outputFile: string): ZipResult;
+export interface PackageExtensionOptions {
+  target?: 'chrome' | 'firefox' | 'all';
+  dir?: string;
+  out?: string;
+}
 
+export function createZipArchive(sourceDir: string, outputFile: string): ZipResult;
+export function packageExtension(options?: PackageExtensionOptions): ZipResult;
